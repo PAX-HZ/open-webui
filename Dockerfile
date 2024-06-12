@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Initialize device type args
 # use build args in the docker build commmand with --build-arg="BUILDARG=true"
-ARG USE_CUDA=false
+ARG USE_CUDA=true
 ARG USE_OLLAMA=false
 # Tested with cu117 for CUDA 11 and cu121 for CUDA 12 (default)
 ARG USE_CUDA_VER=cu121
@@ -9,8 +9,10 @@ ARG USE_CUDA_VER=cu121
 # Leaderboard: https://huggingface.co/spaces/mteb/leaderboard 
 # for better performance and multilangauge support use "intfloat/multilingual-e5-large" (~2.5GB) or "intfloat/multilingual-e5-base" (~1.5GB)
 # IMPORTANT: If you change the embedding model (sentence-transformers/all-MiniLM-L6-v2) and vice versa, you aren't able to use RAG Chat with your previous documents loaded in the WebUI! You need to re-embed them.
-ARG USE_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-ARG USE_RERANKING_MODEL=""
+ARG USE_EMBEDDING_MODEL=qihoo360/360Zhinao-search
+ARG USE_RERANKING_MODEL=qihoo360/360Zhinao-1.8B-Reranking
+# ARG USE_EMBEDDING_MODEL=iampanda/zpoint_large_embedding_zh
+# ARG USE_RERANKING_MODEL=iampanda/zpoint_large_embedding_zh
 ARG BUILD_HASH=dev-build
 # Override at your own risk - non-root configurations are untested
 ARG UID=0
@@ -18,6 +20,11 @@ ARG GID=0
 
 ######## WebUI frontend ########
 FROM --platform=$BUILDPLATFORM node:21-alpine3.19 as build
+
+# 设置代理
+ENV http_proxy=http://192.168.100.23:1081
+ENV https_proxy=http://192.168.100.23:1081
+ENV no_proxy=0.0.0.0,localhost,127.0.0.1
 ARG BUILD_HASH
 
 WORKDIR /app
@@ -120,14 +127,15 @@ COPY --chown=$UID:$GID ./backend/requirements.txt ./requirements.txt
 
 RUN pip3 install uv && \
     if [ "$USE_CUDA" = "true" ]; then \
-    # If you use CUDA the whisper and embedding model will be downloaded on first use
-    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER --no-cache-dir && \
-    uv pip install --system -r requirements.txt --no-cache-dir && \
+    # If you use CUDA the whisper and embedding model will be downloaded on first 
+    # 去除了use--no-cache-dir 
+    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER && \
+    uv pip install --system -r requirements.txt && \
     python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')" && \
     python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
     else \
-    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir && \
-    uv pip install --system -r requirements.txt --no-cache-dir && \
+    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    uv pip install --system -r requirements.txt && \
     python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')" && \
     python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
     fi; \
