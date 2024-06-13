@@ -9,8 +9,8 @@ ARG USE_CUDA_VER=cu121
 # Leaderboard: https://huggingface.co/spaces/mteb/leaderboard 
 # for better performance and multilangauge support use "intfloat/multilingual-e5-large" (~2.5GB) or "intfloat/multilingual-e5-base" (~1.5GB)
 # IMPORTANT: If you change the embedding model (sentence-transformers/all-MiniLM-L6-v2) and vice versa, you aren't able to use RAG Chat with your previous documents loaded in the WebUI! You need to re-embed them.
-ARG USE_EMBEDDING_MODEL=qihoo360/360Zhinao-search
-ARG USE_RERANKING_MODEL=qihoo360/360Zhinao-1.8B-Reranking
+ARG USE_EMBEDDING_MODEL=intfloat/multilingual-e5-large
+ARG USE_RERANKING_MODEL=intfloat/multilingual-e5-large
 # ARG USE_EMBEDDING_MODEL=iampanda/zpoint_large_embedding_zh
 # ARG USE_RERANKING_MODEL=iampanda/zpoint_large_embedding_zh
 ARG BUILD_HASH=dev-build
