@@ -9,10 +9,10 @@ ARG USE_CUDA_VER=cu121
 # Leaderboard: https://huggingface.co/spaces/mteb/leaderboard 
 # for better performance and multilangauge support use "intfloat/multilingual-e5-large" (~2.5GB) or "intfloat/multilingual-e5-base" (~1.5GB)
 # IMPORTANT: If you change the embedding model (sentence-transformers/all-MiniLM-L6-v2) and vice versa, you aren't able to use RAG Chat with your previous documents loaded in the WebUI! You need to re-embed them.
-ARG USE_EMBEDDING_MODEL=intfloat/multilingual-e5-large
-ARG USE_RERANKING_MODEL=intfloat/multilingual-e5-large
-# ARG USE_EMBEDDING_MODEL=iampanda/zpoint_large_embedding_zh
-# ARG USE_RERANKING_MODEL=iampanda/zpoint_large_embedding_zh
+# ARG USE_EMBEDDING_MODEL=intfloat/multilingual-e5-large
+# ARG USE_RERANKING_MODEL=intfloat/multilingual-e5-large
+ARG USE_EMBEDDING_MODEL=Alibaba-NLP/gte-Qwen2-1.5B-instruct
+ARG USE_RERANKING_MODEL=Alibaba-NLP/gte-Qwen2-1.5B-instruct
 ARG BUILD_HASH=dev-build
 # Override at your own risk - non-root configurations are untested
 ARG UID=0
@@ -24,12 +24,13 @@ FROM --platform=$BUILDPLATFORM node:21-alpine3.19 as build
 # 设置代理
 ENV http_proxy=http://192.168.100.23:1081
 ENV https_proxy=http://192.168.100.23:1081
-ENV no_proxy=0.0.0.0,localhost,127.0.0.1
+ENV no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.*
 ARG BUILD_HASH
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+ENV NODE_OPTIONS=--max_old_space_size=4096
 RUN npm ci
 
 COPY . .
@@ -98,6 +99,7 @@ RUN mkdir -p $HOME/.cache/chroma
 RUN echo -n 00000000-0000-0000-0000-000000000000 > $HOME/.cache/chroma/telemetry_user_id
 
 # Make sure the user has access to the app and root directory
+RUN mkdir -p /app/backend/data
 RUN chown -R $UID:$GID /app $HOME
 
 RUN if [ "$USE_OLLAMA" = "true" ]; then \
@@ -130,6 +132,8 @@ RUN pip3 install uv && \
     # If you use CUDA the whisper and embedding model will be downloaded on first 
     # 去除了use--no-cache-dir 
     pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER && \
+    pip3 install packaging ninja && \
+    pip3 install flash-attn --no-build-isolation && \
     uv pip install --system -r requirements.txt && \
     python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')" && \
     python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
@@ -140,7 +144,6 @@ RUN pip3 install uv && \
     python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
     fi; \
     chown -R $UID:$GID /app/backend/data/
-
 
 
 # copy embedding weight from build
