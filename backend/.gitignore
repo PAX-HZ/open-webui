@@ -11,6 +11,7 @@ Pipfile
 !/data/litellm
 /data/litellm/*
 !data/litellm/config.yaml
+!data/statistic.py
 
 !data/config.json
 .webui_secret_key
