@@ -114,6 +114,7 @@ RUN --mount=type=cache,mode=0777,target=/root/.cache/pip if [ "$USE_OLLAMA" = "t
     apt-get update && \
     # Install pandoc and netcat
     apt-get install -y --no-install-recommends pandoc netcat-openbsd curl && \
+    apt-get install -y --no-install-recommends gcc python3-dev && \
     # for RAG OCR
     apt-get install -y --no-install-recommends ffmpeg libsm6 libxext6 && \
     # install helper tools
@@ -124,8 +125,9 @@ RUN --mount=type=cache,mode=0777,target=/root/.cache/pip if [ "$USE_OLLAMA" = "t
     rm -rf /var/lib/apt/lists/*; \
     else \
     apt-get update && \
-    # Install pandoc and netcat
-    apt-get install -y --no-install-recommends pandoc netcat-openbsd curl jq git && \
+    # Install pandoc, netcat and gcc
+    apt-get install -y --no-install-recommends pandoc gcc netcat-openbsd curl jq && \
+    apt-get install -y --no-install-recommends gcc python3-dev && \
     # for RAG OCR
     apt-get install -y --no-install-recommends ffmpeg libsm6 libxext6 && \
     # cleanup
@@ -169,7 +171,7 @@ COPY --chown=$UID:$GID ./backend .
 
 EXPOSE 8080
 
-HEALTHCHECK CMD curl --silent --fail http://localhost:8080/health | jq -e '.status == true' || exit 1
+HEALTHCHECK CMD curl --silent --fail http://localhost:${PORT:-8080}/health | jq -ne 'input.status == true' || exit 1
 
 USER $UID:$GID
 

@@ -306,4 +306,5 @@ dist
 # cypress artifacts
 cypress/videos
 cypress/screenshots
+.vscode/settings.json
 packages/flash_attn*

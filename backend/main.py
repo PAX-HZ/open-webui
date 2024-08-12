@@ -4,9 +4,7 @@ from contextlib import asynccontextmanager
 
 from authlib.integrations.starlette_client import OAuth
 from authlib.oidc.core import UserInfo
-from bs4 import BeautifulSoup
 import json
-import markdown
 import time
 import os
 import sys
@@ -15,28 +13,23 @@ import aiohttp
 import requests
 import mimetypes
 import shutil
-import os
-import uuid
 import inspect
-import asyncio
 
-from fastapi.concurrency import run_in_threadpool
 from fastapi import FastAPI, Request, Depends, status, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
-from fastapi.middleware.wsgi import WSGIMiddleware
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import StreamingResponse, Response, RedirectResponse
 
 
-from apps.socket.main import app as socket_app
+from apps.socket.main import app as socket_app, get_event_emitter, get_event_call
 from apps.ollama.main import (
     app as ollama_app,
-    OpenAIChatCompletionForm,
     get_all_models as get_ollama_models,
     generate_openai_chat_completion as generate_ollama_chat_completion,
 )
@@ -54,13 +47,14 @@ from apps.webui.main import (
     get_pipe_models,
     generate_function_chat_completion,
 )
+from apps.webui.internal.db import Session
 
 
 from pydantic import BaseModel
-from typing import List, Optional, Iterator, Generator, Union
+from typing import List, Optional
 
 from apps.webui.models.auths import Auths
-from apps.webui.models.models import Models, ModelModel
+from apps.webui.models.models import Models
 from apps.webui.models.tools import Tools
 from apps.webui.models.functions import Functions
 from apps.webui.models.users import Users
@@ -83,14 +77,13 @@ from utils.task import (
 from utils.misc import (
     get_last_user_message,
     add_or_update_system_message,
-    stream_message_template,
+    prepend_to_first_user_message_content,
     parse_duration,
 )
 
 from apps.rag.utils import get_rag_context, rag_template
 
 from config import (
-    CONFIG_DATA,
     WEBUI_NAME,
     WEBUI_URL,
     WEBUI_AUTH,
@@ -98,7 +91,6 @@ from config import (
     VERSION,
     CHANGELOG,
     FRONTEND_BUILD_DIR,
-    UPLOAD_DIR,
     CACHE_DIR,
     STATIC_DIR,
     DEFAULT_LOCALE,
@@ -124,9 +116,11 @@ from config import (
     WEBUI_SECRET_KEY,
     WEBUI_SESSION_COOKIE_SAME_SITE,
     WEBUI_SESSION_COOKIE_SECURE,
+    ENABLE_ADMIN_CHAT_ACCESS,
     AppConfig,
 )
-from constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
+
+from constants import ERROR_MESSAGES, WEBHOOK_MESSAGES, TASKS
 from utils.webhook import post_webhook
 
 if SAFE_MODE:
@@ -167,8 +161,20 @@ https://github.com/open-webui/open-webui
 )
 
 
+def run_migrations():
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+    except Exception as e:
+        print(f"Error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    run_migrations()
     yield
 
 
@@ -212,8 +218,79 @@ origins = ["*"]
 ##################################
 
 
+async def get_body_and_model_and_user(request):
+    # Read the original request body
+    body = await request.body()
+    body_str = body.decode("utf-8")
+    body = json.loads(body_str) if body_str else {}
+
+    model_id = body["model"]
+    if model_id not in app.state.MODELS:
+        raise Exception("Model not found")
+    model = app.state.MODELS[model_id]
+
+    user = get_current_user(
+        request,
+        get_http_authorization_cred(request.headers.get("Authorization")),
+    )
+
+    return body, model, user
+
+
+def get_task_model_id(default_model_id):
+    # Set the task model
+    task_model_id = default_model_id
+    # Check if the user has a custom task model and use that model
+    if app.state.MODELS[task_model_id]["owned_by"] == "ollama":
+        if (
+            app.state.config.TASK_MODEL
+            and app.state.config.TASK_MODEL in app.state.MODELS
+        ):
+            task_model_id = app.state.config.TASK_MODEL
+    else:
+        if (
+            app.state.config.TASK_MODEL_EXTERNAL
+            and app.state.config.TASK_MODEL_EXTERNAL in app.state.MODELS
+        ):
+            task_model_id = app.state.config.TASK_MODEL_EXTERNAL
+
+    return task_model_id
+
+
+def get_filter_function_ids(model):
+    def get_priority(function_id):
+        function = Functions.get_function_by_id(function_id)
+        if function is not None and hasattr(function, "valves"):
+            return (function.valves if function.valves else {}).get("priority", 0)
+        return 0
+
+    filter_ids = [function.id for function in Functions.get_global_filter_functions()]
+    if "info" in model and "meta" in model["info"]:
+        filter_ids.extend(model["info"]["meta"].get("filterIds", []))
+        filter_ids = list(set(filter_ids))
+
+    enabled_filter_ids = [
+        function.id
+        for function in Functions.get_functions_by_type("filter", active_only=True)
+    ]
+
+    filter_ids = [
+        filter_id for filter_id in filter_ids if filter_id in enabled_filter_ids
+    ]
+
+    filter_ids.sort(key=get_priority)
+    return filter_ids
+
+
 async def get_function_call_response(
-    messages, files, tool_id, template, task_model_id, user
+    messages,
+    files,
+    tool_id,
+    template,
+    task_model_id,
+    user,
+    __event_emitter__=None,
+    __event_call__=None,
 ):
     tool = Tools.get_tool_by_id(tool_id)
     tools_specs = json.dumps(tool.specs, indent=2)
@@ -240,6 +317,7 @@ async def get_function_call_response(
             {"role": "user", "content": f"Query: {prompt}"},
         ],
         "stream": False,
+        "task": str(TASKS.FUNCTION_CALLING),
     }
 
     try:
@@ -252,7 +330,6 @@ async def get_function_call_response(
     response = None
     try:
         response = await generate_chat_completions(form_data=payload, user=user)
-
         content = None
 
         if hasattr(response, "body_iterator"):
@@ -266,334 +343,356 @@ async def get_function_call_response(
         else:
             content = response["choices"][0]["message"]["content"]
 
+        if content is None:
+            return None, None, False
+
         # Parse the function response
-        if content is not None:
-            print(f"content: {content}")
-            result = json.loads(content)
-            print(result)
+        print(f"content: {content}")
+        result = json.loads(content)
+        print(result)
 
-            citation = None
-            # Call the function
-            if "name" in result:
-                if tool_id in webui_app.state.TOOLS:
-                    toolkit_module = webui_app.state.TOOLS[tool_id]
-                else:
-                    toolkit_module, frontmatter = load_toolkit_module_by_id(tool_id)
-                    webui_app.state.TOOLS[tool_id] = toolkit_module
+        citation = None
 
-                file_handler = False
-                # check if toolkit_module has file_handler self variable
-                if hasattr(toolkit_module, "file_handler"):
-                    file_handler = True
-                    print("file_handler: ", file_handler)
+        if "name" not in result:
+            return None, None, False
 
-                if hasattr(toolkit_module, "valves") and hasattr(
-                    toolkit_module, "Valves"
-                ):
-                    valves = Tools.get_tool_valves_by_id(tool_id)
-                    toolkit_module.valves = toolkit_module.Valves(
-                        **(valves if valves else {})
-                    )
+        # Call the function
+        if tool_id in webui_app.state.TOOLS:
+            toolkit_module = webui_app.state.TOOLS[tool_id]
+        else:
+            toolkit_module, _ = load_toolkit_module_by_id(tool_id)
+            webui_app.state.TOOLS[tool_id] = toolkit_module
 
-                function = getattr(toolkit_module, result["name"])
-                function_result = None
+        file_handler = False
+        # check if toolkit_module has file_handler self variable
+        if hasattr(toolkit_module, "file_handler"):
+            file_handler = True
+            print("file_handler: ", file_handler)
+
+        if hasattr(toolkit_module, "valves") and hasattr(toolkit_module, "Valves"):
+            valves = Tools.get_tool_valves_by_id(tool_id)
+            toolkit_module.valves = toolkit_module.Valves(**(valves if valves else {}))
+
+        function = getattr(toolkit_module, result["name"])
+        function_result = None
+        try:
+            # Get the signature of the function
+            sig = inspect.signature(function)
+            params = result["parameters"]
+
+            # Extra parameters to be passed to the function
+            extra_params = {
+                "__model__": model,
+                "__id__": tool_id,
+                "__messages__": messages,
+                "__files__": files,
+                "__event_emitter__": __event_emitter__,
+                "__event_call__": __event_call__,
+            }
+
+            # Add extra params in contained in function signature
+            for key, value in extra_params.items():
+                if key in sig.parameters:
+                    params[key] = value
+
+            if "__user__" in sig.parameters:
+                # Call the function with the '__user__' parameter included
+                __user__ = {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "role": user.role,
+                }
+
                 try:
-                    # Get the signature of the function
-                    sig = inspect.signature(function)
-                    params = result["parameters"]
-
-                    if "__user__" in sig.parameters:
-                        # Call the function with the '__user__' parameter included
-                        __user__ = {
-                            "id": user.id,
-                            "email": user.email,
-                            "name": user.name,
-                            "role": user.role,
-                        }
-
-                        try:
-                            if hasattr(toolkit_module, "UserValves"):
-                                __user__["valves"] = toolkit_module.UserValves(
-                                    **Tools.get_user_valves_by_id_and_user_id(
-                                        tool_id, user.id
-                                    )
-                                )
-                        except Exception as e:
-                            print(e)
-
-                        params = {**params, "__user__": __user__}
-                    if "__messages__" in sig.parameters:
-                        # Call the function with the '__messages__' parameter included
-                        params = {
-                            **params,
-                            "__messages__": messages,
-                        }
-
-                    if "__files__" in sig.parameters:
-                        # Call the function with the '__files__' parameter included
-                        params = {
-                            **params,
-                            "__files__": files,
-                        }
-
-                    if "__model__" in sig.parameters:
-                        # Call the function with the '__model__' parameter included
-                        params = {
-                            **params,
-                            "__model__": model,
-                        }
-
-                    if "__id__" in sig.parameters:
-                        # Call the function with the '__id__' parameter included
-                        params = {
-                            **params,
-                            "__id__": tool_id,
-                        }
-
-                    if inspect.iscoroutinefunction(function):
-                        function_result = await function(**params)
-                    else:
-                        function_result = function(**params)
-
-                    if hasattr(toolkit_module, "citation") and toolkit_module.citation:
-                        citation = {
-                            "source": {"name": f"TOOL:{tool.name}/{result['name']}"},
-                            "document": [function_result],
-                            "metadata": [{"source": result["name"]}],
-                        }
+                    if hasattr(toolkit_module, "UserValves"):
+                        __user__["valves"] = toolkit_module.UserValves(
+                            **Tools.get_user_valves_by_id_and_user_id(tool_id, user.id)
+                        )
                 except Exception as e:
                     print(e)
 
-                # Add the function result to the system prompt
-                if function_result is not None:
-                    return function_result, citation, file_handler
+                params = {**params, "__user__": __user__}
+
+            if inspect.iscoroutinefunction(function):
+                function_result = await function(**params)
+            else:
+                function_result = function(**params)
+
+            if hasattr(toolkit_module, "citation") and toolkit_module.citation:
+                citation = {
+                    "source": {"name": f"TOOL:{tool.name}/{result['name']}"},
+                    "document": [function_result],
+                    "metadata": [{"source": result["name"]}],
+                }
+        except Exception as e:
+            print(e)
+
+        # Add the function result to the system prompt
+        if function_result is not None:
+            return function_result, citation, file_handler
     except Exception as e:
         print(f"Error: {e}")
 
     return None, None, False
 
 
+async def chat_completion_functions_handler(
+    body, model, user, __event_emitter__, __event_call__
+):
+    skip_files = None
+
+    filter_ids = get_filter_function_ids(model)
+    for filter_id in filter_ids:
+        filter = Functions.get_function_by_id(filter_id)
+        if not filter:
+            continue
+
+        if filter_id in webui_app.state.FUNCTIONS:
+            function_module = webui_app.state.FUNCTIONS[filter_id]
+        else:
+            function_module, _, _ = load_function_module_by_id(filter_id)
+            webui_app.state.FUNCTIONS[filter_id] = function_module
+
+        # Check if the function has a file_handler variable
+        if hasattr(function_module, "file_handler"):
+            skip_files = function_module.file_handler
+
+        if hasattr(function_module, "valves") and hasattr(function_module, "Valves"):
+            valves = Functions.get_function_valves_by_id(filter_id)
+            function_module.valves = function_module.Valves(
+                **(valves if valves else {})
+            )
+
+        if not hasattr(function_module, "inlet"):
+            continue
+
+        try:
+            inlet = function_module.inlet
+
+            # Get the signature of the function
+            sig = inspect.signature(inlet)
+            params = {"body": body}
+
+            # Extra parameters to be passed to the function
+            extra_params = {
+                "__model__": model,
+                "__id__": filter_id,
+                "__event_emitter__": __event_emitter__,
+                "__event_call__": __event_call__,
+            }
+
+            # Add extra params in contained in function signature
+            for key, value in extra_params.items():
+                if key in sig.parameters:
+                    params[key] = value
+
+            if "__user__" in sig.parameters:
+                __user__ = {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "role": user.role,
+                }
+
+                try:
+                    if hasattr(function_module, "UserValves"):
+                        __user__["valves"] = function_module.UserValves(
+                            **Functions.get_user_valves_by_id_and_user_id(
+                                filter_id, user.id
+                            )
+                        )
+                except Exception as e:
+                    print(e)
+
+                params = {**params, "__user__": __user__}
+
+            if inspect.iscoroutinefunction(inlet):
+                body = await inlet(**params)
+            else:
+                body = inlet(**params)
+
+        except Exception as e:
+            print(f"Error: {e}")
+            raise e
+
+    if skip_files:
+        if "files" in body:
+            del body["files"]
+
+    return body, {}
+
+
+async def chat_completion_tools_handler(body, user, __event_emitter__, __event_call__):
+    skip_files = None
+
+    contexts = []
+    citations = None
+
+    task_model_id = get_task_model_id(body["model"])
+
+    # If tool_ids field is present, call the functions
+    if "tool_ids" in body:
+        print(body["tool_ids"])
+        for tool_id in body["tool_ids"]:
+            print(tool_id)
+            try:
+                response, citation, file_handler = await get_function_call_response(
+                    messages=body["messages"],
+                    files=body.get("files", []),
+                    tool_id=tool_id,
+                    template=app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
+                    task_model_id=task_model_id,
+                    user=user,
+                    __event_emitter__=__event_emitter__,
+                    __event_call__=__event_call__,
+                )
+
+                print(file_handler)
+                if isinstance(response, str):
+                    contexts.append(response)
+
+                if citation:
+                    if citations is None:
+                        citations = [citation]
+                    else:
+                        citations.append(citation)
+
+                if file_handler:
+                    skip_files = True
+
+            except Exception as e:
+                print(f"Error: {e}")
+        del body["tool_ids"]
+        print(f"tool_contexts: {contexts}")
+
+    if skip_files:
+        if "files" in body:
+            del body["files"]
+
+    return body, {
+        **({"contexts": contexts} if contexts is not None else {}),
+        **({"citations": citations} if citations is not None else {}),
+    }
+
+
+async def chat_completion_files_handler(body):
+    contexts = []
+    citations = None
+
+    if "files" in body:
+        files = body["files"]
+        del body["files"]
+
+        contexts, citations = get_rag_context(
+            files=files,
+            messages=body["messages"],
+            embedding_function=rag_app.state.EMBEDDING_FUNCTION,
+            k=rag_app.state.config.TOP_K,
+            reranking_function=rag_app.state.sentence_transformer_rf,
+            r=rag_app.state.config.RELEVANCE_THRESHOLD,
+            hybrid_search=rag_app.state.config.ENABLE_RAG_HYBRID_SEARCH,
+        )
+
+        log.debug(f"rag_contexts: {contexts}, citations: {citations}")
+
+    return body, {
+        **({"contexts": contexts} if contexts is not None else {}),
+        **({"citations": citations} if citations is not None else {}),
+    }
+
+
 class ChatCompletionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        data_items = []
-
-        show_citations = False
-        citations = []
-
         if request.method == "POST" and any(
             endpoint in request.url.path
             for endpoint in ["/ollama/api/chat", "/chat/completions"]
         ):
             log.debug(f"request.url.path: {request.url.path}")
 
-            # Read the original request body
-            body = await request.body()
-            body_str = body.decode("utf-8")
-            data = json.loads(body_str) if body_str else {}
-
-            user = get_current_user(
-                request,
-                get_http_authorization_cred(request.headers.get("Authorization")),
-            )
-            # Flag to skip RAG completions if file_handler is present in tools/functions
-            skip_files = False
-            if data.get("citations"):
-                show_citations = True
-                del data["citations"]
-
-            model_id = data["model"]
-            if model_id not in app.state.MODELS:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Model not found",
+            try:
+                body, model, user = await get_body_and_model_and_user(request)
+            except Exception as e:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={"detail": str(e)},
                 )
-            model = app.state.MODELS[model_id]
 
-            def get_priority(function_id):
-                function = Functions.get_function_by_id(function_id)
-                if function is not None and hasattr(function, "valves"):
-                    return (function.valves if function.valves else {}).get(
-                        "priority", 0
-                    )
-                return 0
+            metadata = {
+                "chat_id": body.pop("chat_id", None),
+                "message_id": body.pop("id", None),
+                "session_id": body.pop("session_id", None),
+                "valves": body.pop("valves", None),
+            }
 
-            filter_ids = [
-                function.id for function in Functions.get_global_filter_functions()
-            ]
-            if "info" in model and "meta" in model["info"]:
-                filter_ids.extend(model["info"]["meta"].get("filterIds", []))
-                filter_ids = list(set(filter_ids))
+            __event_emitter__ = get_event_emitter(metadata)
+            __event_call__ = get_event_call(metadata)
 
-            enabled_filter_ids = [
-                function.id
-                for function in Functions.get_functions_by_type(
-                    "filter", active_only=True
+            # Initialize data_items to store additional data to be sent to the client
+            data_items = []
+
+            # Initialize context, and citations
+            contexts = []
+            citations = []
+
+            try:
+                body, flags = await chat_completion_functions_handler(
+                    body, model, user, __event_emitter__, __event_call__
                 )
-            ]
-            filter_ids = [
-                filter_id for filter_id in filter_ids if filter_id in enabled_filter_ids
-            ]
+            except Exception as e:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={"detail": str(e)},
+                )
 
-            filter_ids.sort(key=get_priority)
-            for filter_id in filter_ids:
-                filter = Functions.get_function_by_id(filter_id)
-                if filter:
-                    if filter_id in webui_app.state.FUNCTIONS:
-                        function_module = webui_app.state.FUNCTIONS[filter_id]
-                    else:
-                        function_module, function_type, frontmatter = (
-                            load_function_module_by_id(filter_id)
-                        )
-                        webui_app.state.FUNCTIONS[filter_id] = function_module
+            try:
+                body, flags = await chat_completion_tools_handler(
+                    body, user, __event_emitter__, __event_call__
+                )
 
-                    # Check if the function has a file_handler variable
-                    if hasattr(function_module, "file_handler"):
-                        skip_files = function_module.file_handler
+                contexts.extend(flags.get("contexts", []))
+                citations.extend(flags.get("citations", []))
+            except Exception as e:
+                print(e)
+                pass
 
-                    if hasattr(function_module, "valves") and hasattr(
-                        function_module, "Valves"
-                    ):
-                        valves = Functions.get_function_valves_by_id(filter_id)
-                        function_module.valves = function_module.Valves(
-                            **(valves if valves else {})
-                        )
+            try:
+                body, flags = await chat_completion_files_handler(body)
 
-                    try:
-                        if hasattr(function_module, "inlet"):
-                            inlet = function_module.inlet
+                contexts.extend(flags.get("contexts", []))
+                citations.extend(flags.get("citations", []))
+            except Exception as e:
+                print(e)
+                pass
 
-                            # Get the signature of the function
-                            sig = inspect.signature(inlet)
-                            params = {"body": data}
+            # If context is not empty, insert it into the messages
+            if len(contexts) > 0:
+                context_string = "/n".join(contexts).strip()
+                prompt = get_last_user_message(body["messages"])
 
-                            if "__user__" in sig.parameters:
-                                __user__ = {
-                                    "id": user.id,
-                                    "email": user.email,
-                                    "name": user.name,
-                                    "role": user.role,
-                                }
-
-                                try:
-                                    if hasattr(function_module, "UserValves"):
-                                        __user__["valves"] = function_module.UserValves(
-                                            **Functions.get_user_valves_by_id_and_user_id(
-                                                filter_id, user.id
-                                            )
-                                        )
-                                except Exception as e:
-                                    print(e)
-
-                                params = {**params, "__user__": __user__}
-
-                            if "__id__" in sig.parameters:
-                                params = {
-                                    **params,
-                                    "__id__": filter_id,
-                                }
-
-                            if inspect.iscoroutinefunction(inlet):
-                                data = await inlet(**params)
-                            else:
-                                data = inlet(**params)
-
-                    except Exception as e:
-                        print(f"Error: {e}")
-                        return JSONResponse(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            content={"detail": str(e)},
-                        )
-
-            # Set the task model
-            task_model_id = data["model"]
-            # Check if the user has a custom task model and use that model
-            if app.state.MODELS[task_model_id]["owned_by"] == "ollama":
-                if (
-                    app.state.config.TASK_MODEL
-                    and app.state.config.TASK_MODEL in app.state.MODELS
-                ):
-                    task_model_id = app.state.config.TASK_MODEL
-            else:
-                if (
-                    app.state.config.TASK_MODEL_EXTERNAL
-                    and app.state.config.TASK_MODEL_EXTERNAL in app.state.MODELS
-                ):
-                    task_model_id = app.state.config.TASK_MODEL_EXTERNAL
-
-            prompt = get_last_user_message(data["messages"])
-            context = ""
-
-            # If tool_ids field is present, call the functions
-            if "tool_ids" in data:
-                print(data["tool_ids"])
-                for tool_id in data["tool_ids"]:
-                    print(tool_id)
-                    try:
-                        response, citation, file_handler = (
-                            await get_function_call_response(
-                                messages=data["messages"],
-                                files=data.get("files", []),
-                                tool_id=tool_id,
-                                template=app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
-                                task_model_id=task_model_id,
-                                user=user,
-                            )
-                        )
-
-                        print(file_handler)
-                        if isinstance(response, str):
-                            context += ("\n" if context != "" else "") + response
-
-                        if citation:
-                            citations.append(citation)
-                            show_citations = True
-
-                        if file_handler:
-                            skip_files = True
-
-                    except Exception as e:
-                        print(f"Error: {e}")
-                del data["tool_ids"]
-
-                print(f"tool_context: {context}")
-
-            # If files field is present, generate RAG completions
-            # If skip_files is True, skip the RAG completions
-            if "files" in data:
-                if not skip_files:
-                    data = {**data}
-                    rag_context, rag_citations = get_rag_context(
-                        files=data["files"],
-                        messages=data["messages"],
-                        embedding_function=rag_app.state.EMBEDDING_FUNCTION,
-                        k=rag_app.state.config.TOP_K,
-                        reranking_function=rag_app.state.sentence_transformer_rf,
-                        r=rag_app.state.config.RELEVANCE_THRESHOLD,
-                        hybrid_search=rag_app.state.config.ENABLE_RAG_HYBRID_SEARCH,
+                # Workaround for Ollama 2.0+ system prompt issue
+                # TODO: replace with add_or_update_system_message
+                if model["owned_by"] == "ollama":
+                    body["messages"] = prepend_to_first_user_message_content(
+                        rag_template(
+                            rag_app.state.config.RAG_TEMPLATE, context_string, prompt
+                        ),
+                        body["messages"],
                     )
-                    if rag_context:
-                        context += ("\n" if context != "" else "") + rag_context
+                else:
+                    body["messages"] = add_or_update_system_message(
+                        rag_template(
+                            rag_app.state.config.RAG_TEMPLATE, context_string, prompt
+                        ),
+                        body["messages"],
+                    )
 
-                    log.debug(f"rag_context: {rag_context}, citations: {citations}")
-
-                    if rag_citations:
-                        citations.extend(rag_citations)
-
-                del data["files"]
-
-            if show_citations and len(citations) > 0:
+            # If there are citations, add them to the data_items
+            if len(citations) > 0:
                 data_items.append({"citations": citations})
 
-            if context != "":
-                system_prompt = rag_template(
-                    rag_app.state.config.RAG_TEMPLATE, context, prompt
-                )
-                print(system_prompt)
-                data["messages"] = add_or_update_system_message(
-                    system_prompt, data["messages"]
-                )
-
-            modified_body_bytes = json.dumps(data).encode("utf-8")
+            body["metadata"] = metadata
+            modified_body_bytes = json.dumps(body).encode("utf-8")
             # Replace the request body with the modified one
             request._body = modified_body_bytes
             # Set custom header to ensure content-length matches new body length
@@ -654,9 +753,7 @@ app.add_middleware(ChatCompletionMiddleware)
 ##################################
 
 
-def filter_pipeline(payload, user):
-    user = {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
-    model_id = payload["model"]
+def get_sorted_filters(model_id):
     filters = [
         model
         for model in app.state.MODELS.values()
@@ -672,6 +769,13 @@ def filter_pipeline(payload, user):
         )
     ]
     sorted_filters = sorted(filters, key=lambda x: x["pipeline"]["priority"])
+    return sorted_filters
+
+
+def filter_pipeline(payload, user):
+    user = {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
+    model_id = payload["model"]
+    sorted_filters = get_sorted_filters(model_id)
 
     model = app.state.MODELS[model_id]
 
@@ -704,25 +808,9 @@ def filter_pipeline(payload, user):
             print(f"Connection error: {e}")
 
             if r is not None:
-                try:
-                    res = r.json()
-                except:
-                    pass
+                res = r.json()
                 if "detail" in res:
                     raise Exception(r.status_code, res["detail"])
-
-            else:
-                pass
-
-    if "pipeline" not in app.state.MODELS[model_id]:
-        if "chat_id" in payload:
-            del payload["chat_id"]
-
-        if "title" in payload:
-            del payload["title"]
-
-        if "task" in payload:
-            del payload["task"]
 
     return payload
 
@@ -788,6 +876,14 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def commit_session_after_request(request: Request, call_next):
+    response = await call_next(request)
+    log.debug("Commit session after request")
+    Session.commit()
+    return response
+
+
+@app.middleware("http")
 async def check_url(request: Request, call_next):
     if len(app.state.MODELS) == 0:
         await get_all_models()
@@ -825,6 +921,7 @@ webui_app.state.EMBEDDING_FUNCTION = rag_app.state.EMBEDDING_FUNCTION
 
 
 async def get_all_models():
+    # TODO: Optimize this function
     pipe_models = []
     openai_models = []
     ollama_models = []
@@ -851,9 +948,17 @@ async def get_all_models():
 
     models = pipe_models + openai_models + ollama_models
 
+    global_action_ids = [
+        function.id for function in Functions.get_global_action_functions()
+    ]
+    enabled_action_ids = [
+        function.id
+        for function in Functions.get_functions_by_type("action", active_only=True)
+    ]
+
     custom_models = Models.get_all_models()
     for custom_model in custom_models:
-        if custom_model.base_model_id == None:
+        if custom_model.base_model_id is None:
             for model in models:
                 if (
                     custom_model.id == model["id"]
@@ -861,14 +966,28 @@ async def get_all_models():
                 ):
                     model["name"] = custom_model.name
                     model["info"] = custom_model.model_dump()
+
+                    action_ids = []
+                    if "info" in model and "meta" in model["info"]:
+                        action_ids.extend(model["info"]["meta"].get("actionIds", []))
+
+                    model["action_ids"] = action_ids
         else:
             owned_by = "openai"
+            pipe = None
+            action_ids = []
+
             for model in models:
                 if (
                     custom_model.base_model_id == model["id"]
                     or custom_model.base_model_id == model["id"].split(":")[0]
                 ):
                     owned_by = model["owned_by"]
+                    if "pipe" in model:
+                        pipe = model["pipe"]
+
+                    if "info" in model and "meta" in model["info"]:
+                        action_ids.extend(model["info"]["meta"].get("actionIds", []))
                     break
 
             models.append(
@@ -880,11 +999,61 @@ async def get_all_models():
                     "owned_by": owned_by,
                     "info": custom_model.model_dump(),
                     "preset": True,
+                    **({"pipe": pipe} if pipe is not None else {}),
+                    "action_ids": action_ids,
                 }
             )
 
-    app.state.MODELS = {model["id"]: model for model in models}
+    for model in models:
+        action_ids = []
+        if "action_ids" in model:
+            action_ids = model["action_ids"]
+            del model["action_ids"]
 
+        action_ids = action_ids + global_action_ids
+        action_ids = list(set(action_ids))
+        action_ids = [
+            action_id for action_id in action_ids if action_id in enabled_action_ids
+        ]
+
+        model["actions"] = []
+        for action_id in action_ids:
+            action = Functions.get_function_by_id(action_id)
+
+            if action_id in webui_app.state.FUNCTIONS:
+                function_module = webui_app.state.FUNCTIONS[action_id]
+            else:
+                function_module, _, _ = load_function_module_by_id(action_id)
+                webui_app.state.FUNCTIONS[action_id] = function_module
+
+            if hasattr(function_module, "actions"):
+                actions = function_module.actions
+                model["actions"].extend(
+                    [
+                        {
+                            "id": f"{action_id}.{_action['id']}",
+                            "name": _action.get(
+                                "name", f"{action.name} ({_action['id']})"
+                            ),
+                            "description": action.meta.description,
+                            "icon_url": _action.get(
+                                "icon_url", action.meta.manifest.get("icon_url", None)
+                            ),
+                        }
+                        for _action in actions
+                    ]
+                )
+            else:
+                model["actions"].append(
+                    {
+                        "id": action_id,
+                        "name": action.name,
+                        "description": action.meta.description,
+                        "icon_url": action.meta.manifest.get("icon_url", None),
+                    }
+                )
+
+    app.state.MODELS = {model["id"]: model for model in models}
     webui_app.state.MODELS = app.state.MODELS
 
     return models
@@ -922,13 +1091,24 @@ async def generate_chat_completions(form_data: dict, user=Depends(get_verified_u
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Model not found",
         )
-
     model = app.state.MODELS[model_id]
 
-    pipe = model.get("pipe")
-    if pipe:
+    # `task` field is used to determine the type of the request, e.g. `title_generation`, `query_generation`, etc.
+    task = None
+    if "task" in form_data:
+        task = form_data["task"]
+        del form_data["task"]
+
+    if task:
+        if "metadata" in form_data:
+            form_data["metadata"]["task"] = task
+        else:
+            form_data["metadata"] = {"task": task}
+
+    if model.get("pipe"):
         return await generate_function_chat_completion(form_data, user=user)
     if model["owned_by"] == "ollama":
+        print("generate_ollama_chat_completion")
         return await generate_ollama_chat_completion(form_data, user=user)
     else:
         return await generate_openai_chat_completion(form_data, user=user)
@@ -945,22 +1125,7 @@ async def chat_completed(form_data: dict, user=Depends(get_verified_user)):
         )
     model = app.state.MODELS[model_id]
 
-    filters = [
-        model
-        for model in app.state.MODELS.values()
-        if "pipeline" in model
-        and "type" in model["pipeline"]
-        and model["pipeline"]["type"] == "filter"
-        and (
-            model["pipeline"]["pipelines"] == ["*"]
-            or any(
-                model_id == target_model_id
-                for target_model_id in model["pipeline"]["pipelines"]
-            )
-        )
-    ]
-
-    sorted_filters = sorted(filters, key=lambda x: x["pipeline"]["priority"])
+    sorted_filters = get_sorted_filters(model_id)
     if "pipeline" in model:
         sorted_filters = [model] + sorted_filters
 
@@ -1002,11 +1167,27 @@ async def chat_completed(form_data: dict, user=Depends(get_verified_user)):
                             status_code=r.status_code,
                             content=res,
                         )
-                except:
+                except Exception:
                     pass
 
             else:
                 pass
+
+    __event_emitter__ = get_event_emitter(
+        {
+            "chat_id": data["chat_id"],
+            "message_id": data["id"],
+            "session_id": data["session_id"],
+        }
+    )
+
+    __event_call__ = get_event_call(
+        {
+            "chat_id": data["chat_id"],
+            "message_id": data["id"],
+            "session_id": data["session_id"],
+        }
+    )
 
     def get_priority(function_id):
         function = Functions.get_function_by_id(function_id)
@@ -1032,68 +1213,178 @@ async def chat_completed(form_data: dict, user=Depends(get_verified_user)):
 
     for filter_id in filter_ids:
         filter = Functions.get_function_by_id(filter_id)
-        if filter:
-            if filter_id in webui_app.state.FUNCTIONS:
-                function_module = webui_app.state.FUNCTIONS[filter_id]
+        if not filter:
+            continue
+
+        if filter_id in webui_app.state.FUNCTIONS:
+            function_module = webui_app.state.FUNCTIONS[filter_id]
+        else:
+            function_module, _, _ = load_function_module_by_id(filter_id)
+            webui_app.state.FUNCTIONS[filter_id] = function_module
+
+        if hasattr(function_module, "valves") and hasattr(function_module, "Valves"):
+            valves = Functions.get_function_valves_by_id(filter_id)
+            function_module.valves = function_module.Valves(
+                **(valves if valves else {})
+            )
+
+        if not hasattr(function_module, "outlet"):
+            continue
+        try:
+            outlet = function_module.outlet
+
+            # Get the signature of the function
+            sig = inspect.signature(outlet)
+            params = {"body": data}
+
+            # Extra parameters to be passed to the function
+            extra_params = {
+                "__model__": model,
+                "__id__": filter_id,
+                "__event_emitter__": __event_emitter__,
+                "__event_call__": __event_call__,
+            }
+
+            # Add extra params in contained in function signature
+            for key, value in extra_params.items():
+                if key in sig.parameters:
+                    params[key] = value
+
+            if "__user__" in sig.parameters:
+                __user__ = {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "role": user.role,
+                }
+
+                try:
+                    if hasattr(function_module, "UserValves"):
+                        __user__["valves"] = function_module.UserValves(
+                            **Functions.get_user_valves_by_id_and_user_id(
+                                filter_id, user.id
+                            )
+                        )
+                except Exception as e:
+                    print(e)
+
+                params = {**params, "__user__": __user__}
+
+            if inspect.iscoroutinefunction(outlet):
+                data = await outlet(**params)
             else:
-                function_module, function_type, frontmatter = (
-                    load_function_module_by_id(filter_id)
-                )
-                webui_app.state.FUNCTIONS[filter_id] = function_module
+                data = outlet(**params)
 
-            if hasattr(function_module, "valves") and hasattr(
-                function_module, "Valves"
-            ):
-                valves = Functions.get_function_valves_by_id(filter_id)
-                function_module.valves = function_module.Valves(
-                    **(valves if valves else {})
-                )
+        except Exception as e:
+            print(f"Error: {e}")
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"detail": str(e)},
+            )
 
-            try:
-                if hasattr(function_module, "outlet"):
-                    outlet = function_module.outlet
+    return data
 
-                    # Get the signature of the function
-                    sig = inspect.signature(outlet)
-                    params = {"body": data}
 
-                    if "__user__" in sig.parameters:
-                        __user__ = {
-                            "id": user.id,
-                            "email": user.email,
-                            "name": user.name,
-                            "role": user.role,
-                        }
+@app.post("/api/chat/actions/{action_id}")
+async def chat_action(action_id: str, form_data: dict, user=Depends(get_verified_user)):
+    if "." in action_id:
+        action_id, sub_action_id = action_id.split(".")
+    else:
+        sub_action_id = None
 
-                        try:
-                            if hasattr(function_module, "UserValves"):
-                                __user__["valves"] = function_module.UserValves(
-                                    **Functions.get_user_valves_by_id_and_user_id(
-                                        filter_id, user.id
-                                    )
-                                )
-                        except Exception as e:
-                            print(e)
+    action = Functions.get_function_by_id(action_id)
+    if not action:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
 
-                        params = {**params, "__user__": __user__}
+    data = form_data
+    model_id = data["model"]
+    if model_id not in app.state.MODELS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found",
+        )
+    model = app.state.MODELS[model_id]
 
-                    if "__id__" in sig.parameters:
-                        params = {
-                            **params,
-                            "__id__": filter_id,
-                        }
+    __event_emitter__ = get_event_emitter(
+        {
+            "chat_id": data["chat_id"],
+            "message_id": data["id"],
+            "session_id": data["session_id"],
+        }
+    )
+    __event_call__ = get_event_call(
+        {
+            "chat_id": data["chat_id"],
+            "message_id": data["id"],
+            "session_id": data["session_id"],
+        }
+    )
 
-                    if inspect.iscoroutinefunction(outlet):
-                        data = await outlet(**params)
-                    else:
-                        data = outlet(**params)
+    if action_id in webui_app.state.FUNCTIONS:
+        function_module = webui_app.state.FUNCTIONS[action_id]
+    else:
+        function_module, _, _ = load_function_module_by_id(action_id)
+        webui_app.state.FUNCTIONS[action_id] = function_module
 
-            except Exception as e:
-                print(f"Error: {e}")
-                return JSONResponse(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    content={"detail": str(e)},
-                )
+    if hasattr(function_module, "valves") and hasattr(function_module, "Valves"):
+        valves = Functions.get_function_valves_by_id(action_id)
+        function_module.valves = function_module.Valves(**(valves if valves else {}))
+
+    if hasattr(function_module, "action"):
+        try:
+            action = function_module.action
+
+            # Get the signature of the function
+            sig = inspect.signature(action)
+            params = {"body": data}
+
+            # Extra parameters to be passed to the function
+            extra_params = {
+                "__model__": model,
+                "__id__": sub_action_id if sub_action_id is not None else action_id,
+                "__event_emitter__": __event_emitter__,
+                "__event_call__": __event_call__,
+            }
+
+            # Add extra params in contained in function signature
+            for key, value in extra_params.items():
+                if key in sig.parameters:
+                    params[key] = value
+
+            if "__user__" in sig.parameters:
+                __user__ = {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "role": user.role,
+                }
+
+                try:
+                    if hasattr(function_module, "UserValves"):
+                        __user__["valves"] = function_module.UserValves(
+                            **Functions.get_user_valves_by_id_and_user_id(
+                                action_id, user.id
+                            )
+                        )
+                except Exception as e:
+                    print(e)
+
+                params = {**params, "__user__": __user__}
+
+            if inspect.iscoroutinefunction(action):
+                data = await action(**params)
+            else:
+                data = action(**params)
+
+        except Exception as e:
+            print(f"Error: {e}")
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"detail": str(e)},
+            )
 
     return data
 
@@ -1169,19 +1460,9 @@ async def generate_title(form_data: dict, user=Depends(get_verified_user)):
 
     # Check if the user has a custom task model
     # If the user has a custom task model, use that model
-    if app.state.MODELS[model_id]["owned_by"] == "ollama":
-        if app.state.config.TASK_MODEL:
-            task_model_id = app.state.config.TASK_MODEL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
-    else:
-        if app.state.config.TASK_MODEL_EXTERNAL:
-            task_model_id = app.state.config.TASK_MODEL_EXTERNAL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
+    model_id = get_task_model_id(model_id)
 
     print(model_id)
-    model = app.state.MODELS[model_id]
 
     template = app.state.config.TITLE_GENERATION_PROMPT_TEMPLATE
 
@@ -1200,7 +1481,7 @@ async def generate_title(form_data: dict, user=Depends(get_verified_user)):
         "stream": False,
         "max_tokens": 50,
         "chat_id": form_data.get("chat_id", None),
-        "title": True,
+        "task": str(TASKS.TITLE_GENERATION),
     }
 
     log.debug(payload)
@@ -1212,6 +1493,9 @@ async def generate_title(form_data: dict, user=Depends(get_verified_user)):
             status_code=e.args[0],
             content={"detail": e.args[1]},
         )
+
+    if "chat_id" in payload:
+        del payload["chat_id"]
 
     return await generate_chat_completions(form_data=payload, user=user)
 
@@ -1235,19 +1519,9 @@ async def generate_search_query(form_data: dict, user=Depends(get_verified_user)
 
     # Check if the user has a custom task model
     # If the user has a custom task model, use that model
-    if app.state.MODELS[model_id]["owned_by"] == "ollama":
-        if app.state.config.TASK_MODEL:
-            task_model_id = app.state.config.TASK_MODEL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
-    else:
-        if app.state.config.TASK_MODEL_EXTERNAL:
-            task_model_id = app.state.config.TASK_MODEL_EXTERNAL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
+    model_id = get_task_model_id(model_id)
 
     print(model_id)
-    model = app.state.MODELS[model_id]
 
     template = app.state.config.SEARCH_QUERY_GENERATION_PROMPT_TEMPLATE
 
@@ -1260,7 +1534,7 @@ async def generate_search_query(form_data: dict, user=Depends(get_verified_user)
         "messages": [{"role": "user", "content": content}],
         "stream": False,
         "max_tokens": 30,
-        "task": True,
+        "task": str(TASKS.QUERY_GENERATION),
     }
 
     print(payload)
@@ -1272,6 +1546,9 @@ async def generate_search_query(form_data: dict, user=Depends(get_verified_user)
             status_code=e.args[0],
             content={"detail": e.args[1]},
         )
+
+    if "chat_id" in payload:
+        del payload["chat_id"]
 
     return await generate_chat_completions(form_data=payload, user=user)
 
@@ -1289,19 +1566,9 @@ async def generate_emoji(form_data: dict, user=Depends(get_verified_user)):
 
     # Check if the user has a custom task model
     # If the user has a custom task model, use that model
-    if app.state.MODELS[model_id]["owned_by"] == "ollama":
-        if app.state.config.TASK_MODEL:
-            task_model_id = app.state.config.TASK_MODEL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
-    else:
-        if app.state.config.TASK_MODEL_EXTERNAL:
-            task_model_id = app.state.config.TASK_MODEL_EXTERNAL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
+    model_id = get_task_model_id(model_id)
 
     print(model_id)
-    model = app.state.MODELS[model_id]
 
     template = '''
 Your task is to reflect the speaker's likely facial expression through a fitting emoji. Interpret emotions from the message and reflect their facial expression using fitting, diverse emojis (e.g., 😊, 😢, 😡, 😱).
@@ -1324,7 +1591,7 @@ Message: """{{prompt}}"""
         "stream": False,
         "max_tokens": 4,
         "chat_id": form_data.get("chat_id", None),
-        "task": True,
+        "task": str(TASKS.EMOJI_GENERATION),
     }
 
     log.debug(payload)
@@ -1336,6 +1603,9 @@ Message: """{{prompt}}"""
             status_code=e.args[0],
             content={"detail": e.args[1]},
         )
+
+    if "chat_id" in payload:
+        del payload["chat_id"]
 
     return await generate_chat_completions(form_data=payload, user=user)
 
@@ -1353,22 +1623,13 @@ async def get_tools_function_calling(form_data: dict, user=Depends(get_verified_
 
     # Check if the user has a custom task model
     # If the user has a custom task model, use that model
-    if app.state.MODELS[model_id]["owned_by"] == "ollama":
-        if app.state.config.TASK_MODEL:
-            task_model_id = app.state.config.TASK_MODEL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
-    else:
-        if app.state.config.TASK_MODEL_EXTERNAL:
-            task_model_id = app.state.config.TASK_MODEL_EXTERNAL
-            if task_model_id in app.state.MODELS:
-                model_id = task_model_id
+    model_id = get_task_model_id(model_id)
 
     print(model_id)
     template = app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE
 
     try:
-        context, citation, file_handler = await get_function_call_response(
+        context, _, _ = await get_function_call_response(
             form_data["messages"],
             form_data.get("files", []),
             form_data["tool_id"],
@@ -1402,7 +1663,7 @@ async def get_pipelines_list(user=Depends(get_admin_user)):
     urlIdxs = [
         idx
         for idx, response in enumerate(responses)
-        if response != None and "pipelines" in response
+        if response is not None and "pipelines" in response
     ]
 
     return {
@@ -1432,6 +1693,7 @@ async def upload_pipeline(
     os.makedirs(upload_folder, exist_ok=True)
     file_path = os.path.join(upload_folder, file.filename)
 
+    r = None
     try:
         # Save the uploaded file
         with open(file_path, "wb") as buffer:
@@ -1455,16 +1717,18 @@ async def upload_pipeline(
         print(f"Connection error: {e}")
 
         detail = "Pipeline not found"
+        status_code = status.HTTP_404_NOT_FOUND
         if r is not None:
+            status_code = r.status_code
             try:
                 res = r.json()
                 if "detail" in res:
                     detail = res["detail"]
-            except:
+            except Exception:
                 pass
 
         raise HTTPException(
-            status_code=(r.status_code if r is not None else status.HTTP_404_NOT_FOUND),
+            status_code=status_code,
             detail=detail,
         )
     finally:
@@ -1480,7 +1744,6 @@ class AddPipelineForm(BaseModel):
 
 @app.post("/api/pipelines/add")
 async def add_pipeline(form_data: AddPipelineForm, user=Depends(get_admin_user)):
-
     r = None
     try:
         urlIdx = form_data.urlIdx
@@ -1507,7 +1770,7 @@ async def add_pipeline(form_data: AddPipelineForm, user=Depends(get_admin_user))
                 res = r.json()
                 if "detail" in res:
                     detail = res["detail"]
-            except:
+            except Exception:
                 pass
 
         raise HTTPException(
@@ -1523,7 +1786,6 @@ class DeletePipelineForm(BaseModel):
 
 @app.delete("/api/pipelines/delete")
 async def delete_pipeline(form_data: DeletePipelineForm, user=Depends(get_admin_user)):
-
     r = None
     try:
         urlIdx = form_data.urlIdx
@@ -1550,7 +1812,7 @@ async def delete_pipeline(form_data: DeletePipelineForm, user=Depends(get_admin_
                 res = r.json()
                 if "detail" in res:
                     detail = res["detail"]
-            except:
+            except Exception:
                 pass
 
         raise HTTPException(
@@ -1563,8 +1825,6 @@ async def delete_pipeline(form_data: DeletePipelineForm, user=Depends(get_admin_
 async def get_pipelines(urlIdx: Optional[int] = None, user=Depends(get_admin_user)):
     r = None
     try:
-        urlIdx
-
         url = openai_app.state.config.OPENAI_API_BASE_URLS[urlIdx]
         key = openai_app.state.config.OPENAI_API_KEYS[urlIdx]
 
@@ -1585,7 +1845,7 @@ async def get_pipelines(urlIdx: Optional[int] = None, user=Depends(get_admin_use
                 res = r.json()
                 if "detail" in res:
                     detail = res["detail"]
-            except:
+            except Exception:
                 pass
 
         raise HTTPException(
@@ -1596,12 +1856,12 @@ async def get_pipelines(urlIdx: Optional[int] = None, user=Depends(get_admin_use
 
 @app.get("/api/pipelines/{pipeline_id}/valves")
 async def get_pipeline_valves(
-    urlIdx: Optional[int], pipeline_id: str, user=Depends(get_admin_user)
+    urlIdx: Optional[int],
+    pipeline_id: str,
+    user=Depends(get_admin_user),
 ):
-    models = await get_all_models()
     r = None
     try:
-
         url = openai_app.state.config.OPENAI_API_BASE_URLS[urlIdx]
         key = openai_app.state.config.OPENAI_API_KEYS[urlIdx]
 
@@ -1634,10 +1894,10 @@ async def get_pipeline_valves(
 
 @app.get("/api/pipelines/{pipeline_id}/valves/spec")
 async def get_pipeline_valves_spec(
-    urlIdx: Optional[int], pipeline_id: str, user=Depends(get_admin_user)
+    urlIdx: Optional[int],
+    pipeline_id: str,
+    user=Depends(get_admin_user),
 ):
-    models = await get_all_models()
-
     r = None
     try:
         url = openai_app.state.config.OPENAI_API_BASE_URLS[urlIdx]
@@ -1660,7 +1920,7 @@ async def get_pipeline_valves_spec(
                 res = r.json()
                 if "detail" in res:
                     detail = res["detail"]
-            except:
+            except Exception:
                 pass
 
         raise HTTPException(
@@ -1676,8 +1936,6 @@ async def update_pipeline_valves(
     form_data: dict,
     user=Depends(get_admin_user),
 ):
-    models = await get_all_models()
-
     r = None
     try:
         url = openai_app.state.config.OPENAI_API_BASE_URLS[urlIdx]
@@ -1705,7 +1963,7 @@ async def update_pipeline_valves(
                 res = r.json()
                 if "detail" in res:
                     detail = res["detail"]
-            except:
+            except Exception:
                 pass
 
         raise HTTPException(
@@ -1734,10 +1992,12 @@ async def get_app_config():
             "auth": WEBUI_AUTH,
             "auth_trusted_header": bool(webui_app.state.AUTH_TRUSTED_EMAIL_HEADER),
             "enable_signup": webui_app.state.config.ENABLE_SIGNUP,
+            "enable_login_form": webui_app.state.config.ENABLE_LOGIN_FORM,
             "enable_web_search": rag_app.state.config.ENABLE_RAG_WEB_SEARCH,
             "enable_image_generation": images_app.state.config.ENABLED,
             "enable_community_sharing": webui_app.state.config.ENABLE_COMMUNITY_SHARING,
             "enable_admin_export": ENABLE_ADMIN_EXPORT,
+            "enable_admin_chat_access": ENABLE_ADMIN_CHAT_ACCESS,
         },
         "audio": {
             "tts": {
@@ -1805,7 +2065,7 @@ async def update_webhook_url(form_data: UrlForm, user=Depends(get_admin_user)):
 
 
 @app.get("/api/version")
-async def get_app_config():
+async def get_app_version():
     return {
         "version": VERSION,
     }
@@ -1828,7 +2088,7 @@ async def get_app_latest_release_version():
                 latest_version = data["tag_name"]
 
                 return {"current": VERSION, "latest": latest_version[1:]}
-    except aiohttp.ClientError as e:
+    except aiohttp.ClientError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
@@ -1850,6 +2110,7 @@ for provider_name, provider_config in OAUTH_PROVIDERS.items():
         client_kwargs={
             "scope": provider_config["scope"],
         },
+        redirect_uri=provider_config["redirect_uri"],
     )
 
 # SessionMiddleware is used by authlib for oauth
@@ -1867,7 +2128,10 @@ if len(OAUTH_PROVIDERS) > 0:
 async def oauth_login(provider: str, request: Request):
     if provider not in OAUTH_PROVIDERS:
         raise HTTPException(404)
-    redirect_uri = request.url_for("oauth_callback", provider=provider)
+    # If the provider has a custom redirect URL, use that, otherwise automatically generate one
+    redirect_uri = OAUTH_PROVIDERS[provider].get("redirect_uri") or request.url_for(
+        "oauth_callback", provider=provider
+    )
     return await oauth.create_client(provider).authorize_redirect(request, redirect_uri)
 
 
@@ -1920,7 +2184,8 @@ async def oauth_callback(provider: str, request: Request, response: Response):
             if existing_user:
                 raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
-            picture_url = user_data.get("picture", "")
+            picture_claim = webui_app.state.config.OAUTH_PICTURE_CLAIM
+            picture_url = user_data.get(picture_claim, "")
             if picture_url:
                 # Download the profile image into a base64 string
                 try:
@@ -1940,6 +2205,7 @@ async def oauth_callback(provider: str, request: Request, response: Response):
                     picture_url = ""
             if not picture_url:
                 picture_url = "/user.png"
+            username_claim = webui_app.state.config.OAUTH_USERNAME_CLAIM
             role = (
                 "admin"
                 if Users.get_num_users() == 0
@@ -1950,7 +2216,7 @@ async def oauth_callback(provider: str, request: Request, response: Response):
                 password=get_password_hash(
                     str(uuid.uuid4())
                 ),  # Random password, not used
-                name=user_data.get("name", "User"),
+                name=user_data.get(username_claim, "User"),
                 profile_image_url=picture_url,
                 role=role,
                 oauth_sub=provider_sub,
@@ -2008,7 +2274,7 @@ async def get_opensearch_xml():
     <ShortName>{WEBUI_NAME}</ShortName>
     <Description>Search {WEBUI_NAME}</Description>
     <InputEncoding>UTF-8</InputEncoding>
-    <Image width="16" height="16" type="image/x-icon">{WEBUI_URL}/favicon.png</Image>
+    <Image width="16" height="16" type="image/x-icon">{WEBUI_URL}/static/favicon.png</Image>
     <Url type="text/html" method="get" template="{WEBUI_URL}/?q={"{searchTerms}"}"/>
     <moz:SearchForm>{WEBUI_URL}</moz:SearchForm>
     </OpenSearchDescription>
@@ -2018,6 +2284,12 @@ async def get_opensearch_xml():
 
 @app.get("/health")
 async def healthcheck():
+    return {"status": True}
+
+
+@app.get("/health/db")
+async def healthcheck_with_db():
+    Session.execute(text("SELECT 1;")).all()
     return {"status": True}
 
 

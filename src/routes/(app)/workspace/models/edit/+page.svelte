@@ -17,6 +17,7 @@
 	import Knowledge from '$lib/components/workspace/Models/Knowledge.svelte';
 	import ToolsSelector from '$lib/components/workspace/Models/ToolsSelector.svelte';
 	import FiltersSelector from '$lib/components/workspace/Models/FiltersSelector.svelte';
+	import ActionsSelector from '$lib/components/workspace/Models/ActionsSelector.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -46,7 +47,7 @@
 		base_model_id: null,
 		name: '',
 		meta: {
-			profile_image_url: '/favicon.png',
+			profile_image_url: '/static/favicon.png',
 			description: '',
 			suggestion_prompts: null,
 			tags: []
@@ -64,6 +65,7 @@
 	let knowledge = [];
 	let toolIds = [];
 	let filterIds = [];
+	let actionIds = [];
 
 	const updateHandler = async () => {
 		loading = true;
@@ -93,6 +95,14 @@
 		} else {
 			if (info.meta.filterIds) {
 				delete info.meta.filterIds;
+			}
+		}
+
+		if (actionIds.length > 0) {
+			info.meta.actionIds = actionIds;
+		} else {
+			if (info.meta.actionIds) {
+				delete info.meta.actionIds;
 			}
 		}
 
@@ -159,6 +169,10 @@
 
 				if (model?.info?.meta?.filterIds) {
 					filterIds = [...model?.info?.meta?.filterIds];
+				}
+
+				if (model?.info?.meta?.actionIds) {
+					actionIds = [...model?.info?.meta?.actionIds];
 				}
 
 				if (model?.owned_by === 'openai') {
@@ -459,14 +473,14 @@
 							class="p-1 text-xs flex rounded transition"
 							type="button"
 							on:click={() => {
-								if (info.meta.suggestion_prompts === null) {
+								if ((info?.meta?.suggestion_prompts ?? null) === null) {
 									info.meta.suggestion_prompts = [{ content: '' }];
 								} else {
 									info.meta.suggestion_prompts = null;
 								}
 							}}
 						>
-							{#if info.meta.suggestion_prompts === null}
+							{#if (info?.meta?.suggestion_prompts ?? null) === null}
 								<span class="ml-2 self-center">{$i18n.t('Default')}</span>
 							{:else}
 								<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
@@ -474,7 +488,7 @@
 						</button>
 					</div>
 
-					{#if info.meta.suggestion_prompts !== null}
+					{#if (info?.meta?.suggestion_prompts ?? null) !== null}
 						<button
 							class="p-1 px-2 text-xs flex rounded transition"
 							type="button"
@@ -501,7 +515,7 @@
 					{/if}
 				</div>
 
-				{#if info.meta.suggestion_prompts}
+				{#if info?.meta?.suggestion_prompts}
 					<div class="flex flex-col space-y-1 mt-2">
 						{#if info.meta.suggestion_prompts.length > 0}
 							{#each info.meta.suggestion_prompts as prompt, promptIdx}
@@ -552,6 +566,13 @@
 				<FiltersSelector
 					bind:selectedFilterIds={filterIds}
 					filters={$functions.filter((func) => func.type === 'filter')}
+				/>
+			</div>
+
+			<div class="my-2">
+				<ActionsSelector
+					bind:selectedActionIds={actionIds}
+					actions={$functions.filter((func) => func.type === 'action')}
 				/>
 			</div>
 

@@ -218,7 +218,7 @@ __builtins__.input = input`);
 	}
 </script>
 
-<div class="mb-4" dir="ltr">
+<div class="my-2" dir="ltr">
 	<div
 		class="flex justify-between bg-[#202123] text-white text-xs px-4 pt-1 pb-0.5 rounded-t-lg overflow-x-auto"
 	>
@@ -250,7 +250,8 @@ __builtins__.input = input`);
 			stderr ||
 			result) &&
 			'border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;'}"><code
-			class="language-{lang} rounded-t-none whitespace-pre">{@html highlightedCode || code}</code
+			class="language-{lang} rounded-t-none whitespace-pre"
+			>{#if highlightedCode}{@html highlightedCode}{:else}{code}{/if}</code
 		></pre>
 
 	<div

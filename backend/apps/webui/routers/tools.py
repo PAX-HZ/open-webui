@@ -1,13 +1,8 @@
-from fastapi import Depends, FastAPI, HTTPException, status, Request
-from datetime import datetime, timedelta
-from typing import List, Union, Optional
+from fastapi import Depends, HTTPException, status, Request
+from typing import List, Optional
 
 from fastapi import APIRouter
-from pydantic import BaseModel
-import json
 
-
-from apps.webui.models.users import Users
 from apps.webui.models.tools import Tools, ToolForm, ToolModel, ToolResponse
 from apps.webui.utils import load_toolkit_module_by_id
 
@@ -15,7 +10,6 @@ from utils.utils import get_admin_user, get_verified_user
 from utils.tools import get_tools_specs
 from constants import ERROR_MESSAGES
 
-from importlib import util
 import os
 from pathlib import Path
 
@@ -57,7 +51,9 @@ async def get_toolkits(user=Depends(get_admin_user)):
 
 @router.post("/create", response_model=Optional[ToolResponse])
 async def create_new_toolkit(
-    request: Request, form_data: ToolForm, user=Depends(get_admin_user)
+    request: Request,
+    form_data: ToolForm,
+    user=Depends(get_admin_user),
 ):
     if not form_data.id.isidentifier():
         raise HTTPException(
@@ -68,7 +64,7 @@ async def create_new_toolkit(
     form_data.id = form_data.id.lower()
 
     toolkit = Tools.get_tool_by_id(form_data.id)
-    if toolkit == None:
+    if toolkit is None:
         toolkit_path = os.path.join(TOOLS_DIR, f"{form_data.id}.py")
         try:
             with open(toolkit_path, "w") as tool_file:
@@ -97,7 +93,7 @@ async def create_new_toolkit(
             print(e)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT(e),
+                detail=ERROR_MESSAGES.DEFAULT(str(e)),
             )
     else:
         raise HTTPException(
@@ -131,7 +127,10 @@ async def get_toolkit_by_id(id: str, user=Depends(get_admin_user)):
 
 @router.post("/id/{id}/update", response_model=Optional[ToolModel])
 async def update_toolkit_by_id(
-    request: Request, id: str, form_data: ToolForm, user=Depends(get_admin_user)
+    request: Request,
+    id: str,
+    form_data: ToolForm,
+    user=Depends(get_admin_user),
 ):
     toolkit_path = os.path.join(TOOLS_DIR, f"{id}.py")
 
@@ -166,7 +165,7 @@ async def update_toolkit_by_id(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(e),
+            detail=ERROR_MESSAGES.DEFAULT(str(e)),
         )
 
 
@@ -206,7 +205,7 @@ async def get_toolkit_valves_by_id(id: str, user=Depends(get_admin_user)):
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT(e),
+                detail=ERROR_MESSAGES.DEFAULT(str(e)),
             )
     else:
         raise HTTPException(
@@ -229,7 +228,7 @@ async def get_toolkit_valves_spec_by_id(
         if id in request.app.state.TOOLS:
             toolkit_module = request.app.state.TOOLS[id]
         else:
-            toolkit_module, frontmatter = load_toolkit_module_by_id(id)
+            toolkit_module, _ = load_toolkit_module_by_id(id)
             request.app.state.TOOLS[id] = toolkit_module
 
         if hasattr(toolkit_module, "Valves"):
@@ -257,7 +256,7 @@ async def update_toolkit_valves_by_id(
         if id in request.app.state.TOOLS:
             toolkit_module = request.app.state.TOOLS[id]
         else:
-            toolkit_module, frontmatter = load_toolkit_module_by_id(id)
+            toolkit_module, _ = load_toolkit_module_by_id(id)
             request.app.state.TOOLS[id] = toolkit_module
 
         if hasattr(toolkit_module, "Valves"):
@@ -272,7 +271,7 @@ async def update_toolkit_valves_by_id(
                 print(e)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERROR_MESSAGES.DEFAULT(e),
+                    detail=ERROR_MESSAGES.DEFAULT(str(e)),
                 )
         else:
             raise HTTPException(
@@ -302,7 +301,7 @@ async def get_toolkit_user_valves_by_id(id: str, user=Depends(get_verified_user)
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT(e),
+                detail=ERROR_MESSAGES.DEFAULT(str(e)),
             )
     else:
         raise HTTPException(
@@ -320,7 +319,7 @@ async def get_toolkit_user_valves_spec_by_id(
         if id in request.app.state.TOOLS:
             toolkit_module = request.app.state.TOOLS[id]
         else:
-            toolkit_module, frontmatter = load_toolkit_module_by_id(id)
+            toolkit_module, _ = load_toolkit_module_by_id(id)
             request.app.state.TOOLS[id] = toolkit_module
 
         if hasattr(toolkit_module, "UserValves"):
@@ -344,7 +343,7 @@ async def update_toolkit_user_valves_by_id(
         if id in request.app.state.TOOLS:
             toolkit_module = request.app.state.TOOLS[id]
         else:
-            toolkit_module, frontmatter = load_toolkit_module_by_id(id)
+            toolkit_module, _ = load_toolkit_module_by_id(id)
             request.app.state.TOOLS[id] = toolkit_module
 
         if hasattr(toolkit_module, "UserValves"):
@@ -361,7 +360,7 @@ async def update_toolkit_user_valves_by_id(
                 print(e)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERROR_MESSAGES.DEFAULT(e),
+                    detail=ERROR_MESSAGES.DEFAULT(str(e)),
                 )
         else:
             raise HTTPException(

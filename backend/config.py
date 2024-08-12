@@ -5,9 +5,8 @@ import importlib.metadata
 import pkgutil
 import chromadb
 from chromadb import Settings
-from base64 import b64encode
 from bs4 import BeautifulSoup
-from typing import TypeVar, Generic, Union
+from typing import TypeVar, Generic
 from pydantic import BaseModel
 from typing import Optional
 
@@ -19,7 +18,6 @@ import markdown
 import requests
 import shutil
 
-from secrets import token_bytes
 from constants import ERROR_MESSAGES
 
 ####################################
@@ -78,6 +76,16 @@ for source in log_sources:
     log.info(f"{log_env_var}: {SRC_LOG_LEVELS[source]}")
 
 log.setLevel(SRC_LOG_LEVELS["CONFIG"])
+
+
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/health") == -1
+
+
+# Filter out /endpoint
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
 
 WEBUI_NAME = "Sage"
 
@@ -438,15 +446,26 @@ load_oauth_providers()
 
 STATIC_DIR = Path(os.getenv("STATIC_DIR", BACKEND_DIR / "static")).resolve()
 
-frontend_favicon = FRONTEND_BUILD_DIR / "favicon.png"
+frontend_favicon = FRONTEND_BUILD_DIR / "static" / "favicon.png"
+
 if frontend_favicon.exists():
     try:
         shutil.copyfile(frontend_favicon, STATIC_DIR / "favicon.png")
     except Exception as e:
         logging.error(f"An error occurred: {e}")
-
 else:
     logging.warning(f"Frontend favicon not found at {frontend_favicon}")
+
+frontend_splash = FRONTEND_BUILD_DIR / "static" / "splash.png"
+
+if frontend_splash.exists():
+    try:
+        shutil.copyfile(frontend_splash, STATIC_DIR / "splash.png")
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+else:
+    logging.warning(f"Frontend splash not found at {frontend_splash}")
+
 
 ####################################
 # CUSTOM_NAME
@@ -680,7 +699,7 @@ DEFAULT_LOCALE = PersistentConfig(
 )
 
 DEFAULT_MODELS = PersistentConfig(
-    "DEFAULT_MODELS", "ui.default_models", os.environ.get("DEFAULT_MODELS", "llama3:8b")
+    "DEFAULT_MODELS", "ui.default_models", os.environ.get("DEFAULT_MODELS", "qwen2:7b-instruct-q4_K_M")
 )
 
 DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
@@ -751,6 +770,10 @@ WEBHOOK_URL = PersistentConfig(
 
 ENABLE_ADMIN_EXPORT = os.environ.get("ENABLE_ADMIN_EXPORT", "True").lower() == "true"
 
+ENABLE_ADMIN_CHAT_ACCESS = (
+    os.environ.get("ENABLE_ADMIN_CHAT_ACCESS", "True").lower() == "true"
+)
+
 ENABLE_COMMUNITY_SHARING = PersistentConfig(
     "ENABLE_COMMUNITY_SHARING",
     "ui.enable_community_sharing",
@@ -767,11 +790,14 @@ class BannerModel(BaseModel):
     timestamp: int
 
 
-WEBUI_BANNERS = PersistentConfig(
-    "WEBUI_BANNERS",
-    "ui.banners",
-    [BannerModel(**banner) for banner in json.loads("[]")],
-)
+try:
+    banners = json.loads(os.environ.get("WEBUI_BANNERS", "[]"))
+    banners = [BannerModel(**banner) for banner in banners]
+except Exception as e:
+    print(f"Error loading WEBUI_BANNERS: {e}")
+    banners = []
+
+WEBUI_BANNERS = PersistentConfig("WEBUI_BANNERS", "ui.banners", banners)
 
 
 SHOW_ADMIN_DETAILS = PersistentConfig(
@@ -882,6 +908,22 @@ WEBUI_SESSION_COOKIE_SECURE = os.environ.get(
 
 if WEBUI_AUTH and WEBUI_SECRET_KEY == "":
     raise ValueError(ERROR_MESSAGES.ENV_VAR_NOT_FOUND)
+
+####################################
+# RAG document content extraction
+####################################
+
+CONTENT_EXTRACTION_ENGINE = PersistentConfig(
+    "CONTENT_EXTRACTION_ENGINE",
+    "rag.CONTENT_EXTRACTION_ENGINE",
+    os.environ.get("CONTENT_EXTRACTION_ENGINE", "").lower(),
+)
+
+TIKA_SERVER_URL = PersistentConfig(
+    "TIKA_SERVER_URL",
+    "rag.tika_server_url",
+    os.getenv("TIKA_SERVER_URL", "http://tika:9998"),  # Default for sidecar deployment
+)
 
 ####################################
 # RAG
@@ -1274,6 +1316,11 @@ AUDIO_TTS_OPENAI_API_KEY = PersistentConfig(
     os.getenv("AUDIO_TTS_OPENAI_API_KEY", OPENAI_API_KEY),
 )
 
+AUDIO_TTS_API_KEY = PersistentConfig(
+    "AUDIO_TTS_API_KEY",
+    "audio.tts.api_key",
+    os.getenv("AUDIO_TTS_API_KEY", ""),
+)
 
 AUDIO_TTS_ENGINE = PersistentConfig(
     "AUDIO_TTS_ENGINE",
@@ -1300,3 +1347,7 @@ AUDIO_TTS_VOICE = PersistentConfig(
 ####################################
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/webui.db")
+
+# Replace the postgres:// with postgresql://
+if "postgres://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")

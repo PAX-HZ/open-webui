@@ -131,7 +131,7 @@
 
 		<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
 			{#if !$WEBUI_NAME.includes('Open WebUI')}
-				<span class=" text-gray-500 dark:text-gray-300 font-medium">{$WEBUI_NAME}</span> -
+				<span class=" text-gray-500 dark:text-gray-300 font-medium">{$WEBUI_NAME}</span>
 			{/if}
 		</div>
 	</div>
