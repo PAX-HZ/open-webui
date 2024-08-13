@@ -347,6 +347,12 @@ GOOGLE_OAUTH_SCOPE = PersistentConfig(
     os.environ.get("GOOGLE_OAUTH_SCOPE", "openid email profile"),
 )
 
+GOOGLE_REDIRECT_URI = PersistentConfig(
+    "GOOGLE_REDIRECT_URI",
+    "oauth.google.redirect_uri",
+    os.environ.get("GOOGLE_REDIRECT_URI", ""),
+)
+
 MICROSOFT_CLIENT_ID = PersistentConfig(
     "MICROSOFT_CLIENT_ID",
     "oauth.microsoft.client_id",
@@ -371,6 +377,12 @@ MICROSOFT_OAUTH_SCOPE = PersistentConfig(
     os.environ.get("MICROSOFT_OAUTH_SCOPE", "openid email profile"),
 )
 
+MICROSOFT_REDIRECT_URI = PersistentConfig(
+    "MICROSOFT_REDIRECT_URI",
+    "oauth.microsoft.redirect_uri",
+    os.environ.get("MICROSOFT_REDIRECT_URI", ""),
+)
+
 OAUTH_CLIENT_ID = PersistentConfig(
     "OAUTH_CLIENT_ID",
     "oauth.oidc.client_id",
@@ -389,6 +401,12 @@ OPENID_PROVIDER_URL = PersistentConfig(
     os.environ.get("OPENID_PROVIDER_URL", ""),
 )
 
+OPENID_REDIRECT_URI = PersistentConfig(
+    "OPENID_REDIRECT_URI",
+    "oauth.oidc.redirect_uri",
+    os.environ.get("OPENID_REDIRECT_URI", ""),
+)
+
 OAUTH_SCOPES = PersistentConfig(
     "OAUTH_SCOPES",
     "oauth.oidc.scopes",
@@ -401,6 +419,18 @@ OAUTH_PROVIDER_NAME = PersistentConfig(
     os.environ.get("OAUTH_PROVIDER_NAME", "SSO"),
 )
 
+OAUTH_USERNAME_CLAIM = PersistentConfig(
+    "OAUTH_USERNAME_CLAIM",
+    "oauth.oidc.username_claim",
+    os.environ.get("OAUTH_USERNAME_CLAIM", "name"),
+)
+
+OAUTH_PICTURE_CLAIM = PersistentConfig(
+    "OAUTH_USERNAME_CLAIM",
+    "oauth.oidc.avatar_claim",
+    os.environ.get("OAUTH_PICTURE_CLAIM", "picture"),
+)
+
 
 def load_oauth_providers():
     OAUTH_PROVIDERS.clear()
@@ -410,6 +440,7 @@ def load_oauth_providers():
             "client_secret": GOOGLE_CLIENT_SECRET.value,
             "server_metadata_url": "https://accounts.google.com/.well-known/openid-configuration",
             "scope": GOOGLE_OAUTH_SCOPE.value,
+            "redirect_uri": GOOGLE_REDIRECT_URI.value,
         }
 
     if (
@@ -422,6 +453,7 @@ def load_oauth_providers():
             "client_secret": MICROSOFT_CLIENT_SECRET.value,
             "server_metadata_url": f"https://login.microsoftonline.com/{MICROSOFT_CLIENT_TENANT_ID.value}/v2.0/.well-known/openid-configuration",
             "scope": MICROSOFT_OAUTH_SCOPE.value,
+            "redirect_uri": MICROSOFT_REDIRECT_URI.value,
         }
 
     if (
@@ -435,6 +467,7 @@ def load_oauth_providers():
             "server_metadata_url": OPENID_PROVIDER_URL.value,
             "scope": OAUTH_SCOPES.value,
             "name": OAUTH_PROVIDER_NAME.value,
+            "redirect_uri": OPENID_REDIRECT_URI.value,
         }
 
 
@@ -488,6 +521,19 @@ else:
 #                 r = requests.get(url, stream=True)
 #                 if r.status_code == 200:
 #                     with open(f"{STATIC_DIR}/favicon.png", "wb") as f:
+#                         r.raw.decode_content = True
+#                         shutil.copyfileobj(r.raw, f)
+
+#             if "splash" in data:
+#                 url = (
+#                     f"https://api.openwebui.com{data['splash']}"
+#                     if data["splash"][0] == "/"
+#                     else data["splash"]
+#                 )
+
+#                 r = requests.get(url, stream=True)
+#                 if r.status_code == 200:
+#                     with open(f"{STATIC_DIR}/splash.png", "wb") as f:
 #                         r.raw.decode_content = True
 #                         shutil.copyfileobj(r.raw, f)
 
@@ -692,6 +738,12 @@ ENABLE_SIGNUP = PersistentConfig(
     ),
 )
 
+ENABLE_LOGIN_FORM = PersistentConfig(
+    "ENABLE_LOGIN_FORM",
+    "ui.ENABLE_LOGIN_FORM",
+    os.environ.get("ENABLE_LOGIN_FORM", "True").lower() == "true",
+)
+
 DEFAULT_LOCALE = PersistentConfig(
     "DEFAULT_LOCALE",
     "ui.default_locale",
@@ -739,7 +791,7 @@ DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
 DEFAULT_USER_ROLE = PersistentConfig(
     "DEFAULT_USER_ROLE",
     "ui.default_user_role",
-    os.getenv("DEFAULT_USER_ROLE", "user"),
+    os.getenv("DEFAULT_USER_ROLE", "pending"),
 )
 
 USER_PERMISSIONS_CHAT_DELETION = (
@@ -1250,6 +1302,24 @@ COMFYUI_SD3 = PersistentConfig(
     "COMFYUI_SD3",
     "image_generation.comfyui.sd3",
     os.environ.get("COMFYUI_SD3", "").lower() == "true",
+)
+
+COMFYUI_FLUX = PersistentConfig(
+    "COMFYUI_FLUX",
+    "image_generation.comfyui.flux",
+    os.environ.get("COMFYUI_FLUX", "").lower() == "true",
+)
+
+COMFYUI_FLUX_WEIGHT_DTYPE = PersistentConfig(
+    "COMFYUI_FLUX_WEIGHT_DTYPE",
+    "image_generation.comfyui.flux_weight_dtype",
+    os.getenv("COMFYUI_FLUX_WEIGHT_DTYPE", ""),
+)
+
+COMFYUI_FLUX_FP8_CLIP = PersistentConfig(
+    "COMFYUI_FLUX_FP8_CLIP",
+    "image_generation.comfyui.flux_fp8_clip",
+    os.environ.get("COMFYUI_FLUX_FP8_CLIP", "").lower() == "true",
 )
 
 IMAGES_OPENAI_API_BASE_URL = PersistentConfig(
