@@ -757,20 +757,26 @@
 										if (clipboardData && clipboardData.items) {
 											for (const item of clipboardData.items) {
 												if (item.type.indexOf('image') !== -1) {
-													const blob = item.getAsFile();
-													const reader = new FileReader();
+													if (visionCapableModels.length === 0) {
+														toast.error($i18n.t('Selected model(s) do not support image inputs'));
+														e.preventDefault();
+														return;
+													} else {
+														const blob = item.getAsFile();
+														const reader = new FileReader();
 
-													reader.onload = function (e) {
-														files = [
-															...files,
-															{
-																type: 'image',
-																url: `${e.target.result}`
-															}
-														];
-													};
+														reader.onload = function (e) {
+															files = [
+																...files,
+																{
+																	type: 'image',
+																	url: `${e.target.result}`
+																}
+															];
+														};
 
-													reader.readAsDataURL(blob);
+														reader.readAsDataURL(blob);
+													}
 												}
 											}
 										}
