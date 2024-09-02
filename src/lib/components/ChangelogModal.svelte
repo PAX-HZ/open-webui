@@ -27,7 +27,9 @@
 			<div class="text-xl font-semibold">
 				{$i18n.t('What’s New in')}
 				{$WEBUI_NAME}
-				<Confetti x={[-1, -0.25]} y={[0, 0.5]} />
+				<div class="absolute px-5">
+					<Confetti x={[-1, -0.25]} y={[0, 0.5]} delay={[150, 200]} />
+			</div>
 			</div>
 			<button
 				class="self-center"
@@ -92,6 +94,9 @@
 													{changelog[version][section][item].title}
 												</div>
 												<div class="mb-2 mt-1">{changelog[version][section][item].content}</div>
+												{#if changelog[version][section][item].url}
+													<a class="mb-2 mt-1" target="_blank" href="{changelog[version][section][item].url}">{changelog[version][section][item].url}</a>
+												{/if}
 											</div>
 										{/each}
 									</div>

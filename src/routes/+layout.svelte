@@ -150,7 +150,11 @@
 					// Don't redirect if we're already on the auth page
 					// Needed because we pass in tokens from OAuth logins via URL fragments
 					if ($page.url.pathname !== '/auth') {
-						await goto('/auth');
+						if ($page.url.pathname === '/changelog') {
+							await goto('/changelog');
+						} else {
+							await goto('/auth');
+						}
 					}
 				}
 			}
