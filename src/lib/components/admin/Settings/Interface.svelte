@@ -192,7 +192,7 @@
 					<div class=" flex justify-between">
 						<div class="flex flex-row flex-1 border rounded-xl dark:border-gray-800">
 							<select
-								class="w-fit capitalize rounded-xl py-2 px-4 text-xs bg-transparent outline-none"
+								class="bg-right bg-center w-fit capitalize rounded-xl py-2 px-4 text-xs bg-transparent outline-none"
 								bind:value={banner.type}
 								required
 							>
@@ -207,7 +207,7 @@
 							</select>
 
 							<input
-								class="pr-5 py-1.5 text-xs w-full bg-transparent outline-none"
+								class="pl-2 pr-5 py-1.5 text-xs w-full bg-transparent outline-none"
 								placeholder={$i18n.t('Content')}
 								bind:value={banner.content}
 							/>

@@ -13,6 +13,7 @@
 
 	import {
 		chatId,
+		chatBoxMarginTop,
 		chats,
 		config,
 		type Model,
@@ -192,6 +193,38 @@
 		}
 	};
 
+	let calcPaddingSize = () => {
+		let showItems = $banners.filter(
+			(e) => !JSON.parse(localStorage.getItem('dismissedBannerIds') ?? '[]').find((b) => b === e.id)
+		);
+		// find warning and error items
+		let len =
+			$page.url.pathname == '/'
+				? showItems.length
+				: showItems.filter((e) => e.type === 'warning' || e.type === 'error').length;
+
+		console.log('CullenYe:', $page.url.pathname);
+		if (len <= 0) {
+			return '';
+		} else if (len === 1) {
+			return 'mt-[32px]';
+		} else if (len === 2) {
+			return 'mt-[68px]';
+		} else if (len === 3) {
+			return 'mt-[105px]';
+		} else if (len === 4) {
+			return 'mt-[148px]';
+		} else if (len === 5) {
+			return 'mt-[182px]';
+		} else if (len === 6) {
+			return 'mt-[220px]';
+		} else if (len === 7) {
+			return 'mt-[260px]';
+		} else {
+			return 'mt-[296px]';
+		}
+	};
+
 	onMount(async () => {
 		const onMessageHandler = async (event) => {
 			if (event.origin === window.origin) {
@@ -242,6 +275,8 @@
 				await goto('/');
 			}
 		}
+
+		await chatBoxMarginTop.set(calcPaddingSize());
 
 		return () => {
 			window.removeEventListener('message', onMessageHandler);
@@ -1555,7 +1590,7 @@
 			{initNewChat}
 		/>
 
-		{#if $banners.length > 0 && messages.length === 0 && !$chatId && selectedModels.length <= 1}
+		{#if $banners.length > 0 && selectedModels.length <= 1}
 			<div
 				class="absolute top-[4.25rem] w-full {$showSidebar
 					? 'md:max-w-[calc(100%-260px)]'
@@ -1563,28 +1598,31 @@
 			>
 				<div class=" flex flex-col gap-1 w-full">
 					{#each $banners.filter( (b) => (b.dismissible ? !JSON.parse(localStorage.getItem('dismissedBannerIds') ?? '[]').includes(b.id) : true) ) as banner}
-						<Banner
-							{banner}
-							on:dismiss={(e) => {
-								const bannerId = e.detail;
+						{#if (messages.length === 0 && !$chatId) || banner.type == 'warning' || banner.type == 'error'}
+							<Banner
+								{banner}
+								on:dismiss={async (e) => {
+									const bannerId = e.detail;
+									localStorage.setItem(
+										'dismissedBannerIds',
+										JSON.stringify(
+											[
+												bannerId,
+												...JSON.parse(localStorage.getItem('dismissedBannerIds') ?? '[]')
+											].filter((id) => $banners.find((b) => b.id === id))
+										)
+									);
 
-								localStorage.setItem(
-									'dismissedBannerIds',
-									JSON.stringify(
-										[
-											bannerId,
-											...JSON.parse(localStorage.getItem('dismissedBannerIds') ?? '[]')
-										].filter((id) => $banners.find((b) => b.id === id))
-									)
-								);
-							}}
-						/>
+									await chatBoxMarginTop.set(calcPaddingSize());
+								}}
+							/>
+						{/if}
 					{/each}
 				</div>
 			</div>
 		{/if}
 
-		<div class="flex flex-col flex-auto z-10">
+		<div class="flex flex-col flex-auto z-10 {$chatBoxMarginTop}">
 			<div
 				class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden {showControls
 					? 'lg:pr-[24rem]'
