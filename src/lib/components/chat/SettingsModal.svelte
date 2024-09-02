@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { getContext, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { models, settings, user } from '$lib/stores';
-
+	import { updateUserSettings } from '$lib/apis/users';
 	import { getModels as _getModels } from '$lib/apis';
+	import { goto } from '$app/navigation';
 
 	import Modal from '../common/Modal.svelte';
 	import Account from './Settings/Account.svelte';
@@ -14,9 +15,6 @@
 	import Chats from './Settings/Chats.svelte';
 	import User from '../icons/User.svelte';
 	import Personalization from './Settings/Personalization.svelte';
-	import { updateUserSettings } from '$lib/apis/users';
-	import { goto } from '$app/navigation';
-	import Valves from './Settings/Valves.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -34,6 +32,37 @@
 	};
 
 	let selectedTab = 'general';
+
+	// Function to handle sideways scrolling
+	const scrollHandler = (event) => {
+		const settingsTabsContainer = document.getElementById('settings-tabs-container');
+		if (settingsTabsContainer) {
+			event.preventDefault(); // Prevent default vertical scrolling
+			settingsTabsContainer.scrollLeft += event.deltaY; // Scroll sideways
+		}
+	};
+
+	const addScrollListener = async () => {
+		await tick();
+		const settingsTabsContainer = document.getElementById('settings-tabs-container');
+		if (settingsTabsContainer) {
+			settingsTabsContainer.addEventListener('wheel', scrollHandler);
+		}
+	};
+
+	const removeScrollListener = async () => {
+		await tick();
+		const settingsTabsContainer = document.getElementById('settings-tabs-container');
+		if (settingsTabsContainer) {
+			settingsTabsContainer.removeEventListener('wheel', scrollHandler);
+		}
+	};
+
+	$: if (show) {
+		addScrollListener();
+	} else {
+		removeScrollListener();
+	}
 </script>
 
 <Modal bind:show>
@@ -61,6 +90,7 @@
 
 		<div class="flex flex-col md:flex-row w-full p-4 md:space-x-4">
 			<div
+				id="settings-tabs-container"
 				class="tabs flex flex-row overflow-x-auto space-x-1 md:space-x-0 md:space-y-1 md:flex-col flex-1 md:flex-none md:w-40 dark:text-gray-200 text-xs text-left mb-3 md:mb-0"
 			>
 				<button
@@ -155,30 +185,6 @@
 						</svg>
 					</div>
 					<div class=" self-center">{$i18n.t('Audio')}</div>
-				</button>
-
-				<button
-					class="px-2.5 py-2.5 min-w-fit rounded-lg flex-1 md:flex-none flex text-right transition {selectedTab ===
-					'valves'
-						? 'bg-gray-200 dark:bg-gray-800'
-						: ' hover:bg-gray-100 dark:hover:bg-gray-850'}"
-					on:click={() => {
-						selectedTab = 'valves';
-					}}
-				>
-					<div class=" self-center mr-2">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							class="size-4"
-						>
-							<path
-								d="M18.75 12.75h1.5a.75.75 0 0 0 0-1.5h-1.5a.75.75 0 0 0 0 1.5ZM12 6a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 12 6ZM12 18a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 12 18ZM3.75 6.75h1.5a.75.75 0 1 0 0-1.5h-1.5a.75.75 0 0 0 0 1.5ZM5.25 18.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 0 1.5ZM3 12a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 3 12ZM9 3.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5ZM12.75 12a2.25 2.25 0 1 1 4.5 0 2.25 2.25 0 0 1-4.5 0ZM9 15.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Z"
-							/>
-						</svg>
-					</div>
-					<div class=" self-center">{$i18n.t('Valves')}</div>
 				</button>
 
 				<button
@@ -313,13 +319,6 @@
 					/>
 				{:else if selectedTab === 'audio'}
 					<Audio
-						{saveSettings}
-						on:save={() => {
-							toast.success($i18n.t('Settings saved successfully!'));
-						}}
-					/>
-				{:else if selectedTab === 'valves'}
-					<Valves
 						{saveSettings}
 						on:save={() => {
 							toast.success($i18n.t('Settings saved successfully!'));

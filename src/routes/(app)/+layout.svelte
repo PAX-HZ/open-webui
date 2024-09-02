@@ -38,6 +38,7 @@
 	import ChangelogModal from '$lib/components/ChangelogModal.svelte';
 	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
 	import { getFunctions } from '$lib/apis/functions';
+	import { page } from '$app/stores';
 
 	const i18n = getContext('i18n');
 
@@ -51,7 +52,9 @@
 
 	onMount(async () => {
 		if ($user === undefined) {
-			await goto('/auth');
+			if ($page.url.pathname !== '/changelog') {
+				await goto('/auth');
+			}
 		} else if (['user', 'admin'].includes($user.role)) {
 			try {
 				// Check if IndexedDB exists
@@ -190,7 +193,7 @@
 		class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 h-screen max-h-[100dvh] overflow-auto flex flex-row"
 	>
 		{#if loaded}
-			{#if !['user', 'admin'].includes($user.role)}
+			{#if $page.url.pathname !== '/changelog' && !['user', 'admin'].includes($user.role)}
 				<AccountPending />
 			{:else if localDBChats.length > 0}
 				<div class="fixed w-full h-full flex z-50">

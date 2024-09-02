@@ -24,10 +24,12 @@
 <Modal bind:show>
 	<div class="px-5 pt-4 dark:text-gray-300 text-gray-700">
 		<div class="flex justify-between items-start">
-			<div class="text-xl font-bold">
+			<div class="text-xl font-semibold">
 				{$i18n.t('What’s New in')}
 				{$WEBUI_NAME}
-				<Confetti x={[-1, -0.25]} y={[0, 0.5]} />
+				<div class="absolute px-5">
+					<Confetti x={[-1, -0.25]} y={[0, 0.5]} delay={[150, 200]} />
+			</div>
 			</div>
 			<button
 				class="self-center"
@@ -63,7 +65,7 @@
 				{#if changelog}
 					{#each Object.keys(changelog) as version}
 						<div class=" mb-3 pr-2">
-							<div class="font-bold text-xl mb-1 dark:text-white">
+							<div class="font-semibold text-xl mb-1 dark:text-white">
 								v{version} - {changelog[version].date}
 							</div>
 
@@ -72,7 +74,7 @@
 							{#each Object.keys(changelog[version]).filter((section) => section !== 'date') as section}
 								<div class="">
 									<div
-										class="font-bold uppercase text-xs {section === 'added'
+										class="font-semibold uppercase text-xs {section === 'added'
 											? 'text-white bg-blue-600'
 											: section === 'fixed'
 											? 'text-white bg-green-600'
@@ -92,6 +94,9 @@
 													{changelog[version][section][item].title}
 												</div>
 												<div class="mb-2 mt-1">{changelog[version][section][item].content}</div>
+												{#if changelog[version][section][item].url}
+													<a class="mb-2 mt-1" target="_blank" href="{changelog[version][section][item].url}">{changelog[version][section][item].url}</a>
+												{/if}
 											</div>
 										{/each}
 									</div>

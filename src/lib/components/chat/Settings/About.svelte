@@ -58,16 +58,16 @@
 							v{WEBUI_VERSION}
 						</Tooltip>
 
-						<a
+						<!-- <a
 							href="https://github.com/open-webui/open-webui/releases/tag/v{version.latest}"
 							target="_blank"
-						>
+						> -->
 							{updateAvailable === null
 								? $i18n.t('Checking for updates...')
 								: updateAvailable
 								? `(v${version.latest} ${$i18n.t('available!')})`
 								: $i18n.t('(latest)')}
-						</a>
+						<!-- </a> -->
 					</div>
 
 					<button
@@ -80,14 +80,14 @@
 					</button>
 				</div>
 
-				<button
+				<!-- <button
 					class=" text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-lg font-medium"
 					on:click={() => {
 						checkForVersionUpdates();
 					}}
 				>
 					{$i18n.t('Check for updates')}
-				</button>
+				</button> -->
 			</div>
 		</div>
 
@@ -104,9 +104,9 @@
 			</div>
 		{/if}
 
-		<hr class=" dark:border-gray-850" />
+		<!-- <hr class=" dark:border-gray-850" /> -->
 
-		<div class="flex space-x-1">
+		<!-- <div class="flex space-x-1">
 			<a href="https://discord.gg/5rJgQTnV4s" target="_blank">
 				<img
 					alt="Discord"
@@ -127,12 +127,12 @@
 					src="https://img.shields.io/github/stars/open-webui/open-webui?style=social&label=Star us on Github"
 				/>
 			</a>
-		</div>
+		</div> -->
 
-		<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+		<!-- <div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
 			{#if !$WEBUI_NAME.includes('Open WebUI')}
-				<span class=" text-gray-500 dark:text-gray-300 font-medium">{$WEBUI_NAME}</span> -
+				<span class=" text-gray-500 dark:text-gray-300 font-medium">{$WEBUI_NAME}</span>
 			{/if}
-		</div>
+		</div> -->
 	</div>
 </div>

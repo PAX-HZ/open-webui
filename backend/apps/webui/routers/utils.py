@@ -1,6 +1,8 @@
+from pathlib import Path
+import site
+
 from fastapi import APIRouter, UploadFile, File, Response
 from fastapi import Depends, HTTPException, status
-from peewee import SqliteDatabase
 from starlette.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
@@ -10,7 +12,6 @@ import markdown
 import black
 
 
-from apps.webui.internal.db import DB
 from utils.utils import get_admin_user
 from utils.misc import calculate_sha256, get_gravatar_url
 
@@ -66,8 +67,18 @@ async def download_chat_as_pdf(
     pdf = FPDF()
     pdf.add_page()
 
-    STATIC_DIR = "./static"
-    FONTS_DIR = f"{STATIC_DIR}/fonts"
+    # When running in docker, workdir is /app/backend, so fonts is in /app/backend/static/fonts
+    FONTS_DIR = Path("./static/fonts")
+
+    # Non Docker Installation
+
+    # When running using `pip install` the static directory is in the site packages.
+    if not FONTS_DIR.exists():
+        FONTS_DIR = Path(site.getsitepackages()[0]) / "static/fonts"
+    # When running using `pip install -e .` the static directory is in the site packages.
+    # This path only works if `open-webui serve` is run from the root of this project.
+    if not FONTS_DIR.exists():
+        FONTS_DIR = Path("./backend/static/fonts")
 
     pdf.add_font("NotoSans", "", f"{FONTS_DIR}/NotoSans-Regular.ttf")
     pdf.add_font("NotoSans", "b", f"{FONTS_DIR}/NotoSans-Bold.ttf")
@@ -114,13 +125,15 @@ async def download_db(user=Depends(get_admin_user)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
-    if not isinstance(DB, SqliteDatabase):
+    from apps.webui.internal.db import engine
+
+    if engine.name != "sqlite":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DB_NOT_SQLITE,
         )
     return FileResponse(
-        DB.database,
+        engine.url.database,
         media_type="application/octet-stream",
         filename="webui.db",
     )

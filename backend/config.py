@@ -5,9 +5,8 @@ import importlib.metadata
 import pkgutil
 import chromadb
 from chromadb import Settings
-from base64 import b64encode
 from bs4 import BeautifulSoup
-from typing import TypeVar, Generic, Union
+from typing import TypeVar, Generic
 from pydantic import BaseModel
 from typing import Optional
 
@@ -19,7 +18,6 @@ import markdown
 import requests
 import shutil
 
-from secrets import token_bytes
 from constants import ERROR_MESSAGES
 
 ####################################
@@ -79,6 +77,16 @@ for source in log_sources:
 
 log.setLevel(SRC_LOG_LEVELS["CONFIG"])
 
+
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/health") == -1
+
+
+# Filter out /endpoint
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
+
 WEBUI_NAME = "Sage"
 
 WEBUI_URL = os.environ.get("WEBUI_URL", "http://localhost:3000")
@@ -102,10 +110,11 @@ except:
 
 VERSION = PACKAGE_DATA["version"]
 
-
+import re
 # Function to parse each section
 def parse_section(section):
     items = []
+    url_pattern = r"https://\S+"
     for li in section.find_all("li"):
         # Extract raw HTML string
         raw_html = str(li)
@@ -117,8 +126,16 @@ def parse_section(section):
         parts = text.split(": ", 1)
         title = parts[0].strip() if len(parts) > 1 else ""
         content = parts[1].strip() if len(parts) > 1 else text
+        # Check for URLs in content
+        url = None
+        match = re.search(url_pattern, content)
+        if match:
+            url = match.group(0)
+            # Remove the URL from the content
+            content = content.replace(url, "").strip()
 
-        items.append({"title": title, "content": content, "raw": raw_html})
+        # Append parsed data including URL
+        items.append({"title": title, "content": content, "url": url, "raw": raw_html})
     return items
 
 
@@ -339,6 +356,12 @@ GOOGLE_OAUTH_SCOPE = PersistentConfig(
     os.environ.get("GOOGLE_OAUTH_SCOPE", "openid email profile"),
 )
 
+GOOGLE_REDIRECT_URI = PersistentConfig(
+    "GOOGLE_REDIRECT_URI",
+    "oauth.google.redirect_uri",
+    os.environ.get("GOOGLE_REDIRECT_URI", ""),
+)
+
 MICROSOFT_CLIENT_ID = PersistentConfig(
     "MICROSOFT_CLIENT_ID",
     "oauth.microsoft.client_id",
@@ -363,6 +386,12 @@ MICROSOFT_OAUTH_SCOPE = PersistentConfig(
     os.environ.get("MICROSOFT_OAUTH_SCOPE", "openid email profile"),
 )
 
+MICROSOFT_REDIRECT_URI = PersistentConfig(
+    "MICROSOFT_REDIRECT_URI",
+    "oauth.microsoft.redirect_uri",
+    os.environ.get("MICROSOFT_REDIRECT_URI", ""),
+)
+
 OAUTH_CLIENT_ID = PersistentConfig(
     "OAUTH_CLIENT_ID",
     "oauth.oidc.client_id",
@@ -381,6 +410,12 @@ OPENID_PROVIDER_URL = PersistentConfig(
     os.environ.get("OPENID_PROVIDER_URL", ""),
 )
 
+OPENID_REDIRECT_URI = PersistentConfig(
+    "OPENID_REDIRECT_URI",
+    "oauth.oidc.redirect_uri",
+    os.environ.get("OPENID_REDIRECT_URI", ""),
+)
+
 OAUTH_SCOPES = PersistentConfig(
     "OAUTH_SCOPES",
     "oauth.oidc.scopes",
@@ -393,6 +428,18 @@ OAUTH_PROVIDER_NAME = PersistentConfig(
     os.environ.get("OAUTH_PROVIDER_NAME", "SSO"),
 )
 
+OAUTH_USERNAME_CLAIM = PersistentConfig(
+    "OAUTH_USERNAME_CLAIM",
+    "oauth.oidc.username_claim",
+    os.environ.get("OAUTH_USERNAME_CLAIM", "name"),
+)
+
+OAUTH_PICTURE_CLAIM = PersistentConfig(
+    "OAUTH_USERNAME_CLAIM",
+    "oauth.oidc.avatar_claim",
+    os.environ.get("OAUTH_PICTURE_CLAIM", "picture"),
+)
+
 
 def load_oauth_providers():
     OAUTH_PROVIDERS.clear()
@@ -402,6 +449,7 @@ def load_oauth_providers():
             "client_secret": GOOGLE_CLIENT_SECRET.value,
             "server_metadata_url": "https://accounts.google.com/.well-known/openid-configuration",
             "scope": GOOGLE_OAUTH_SCOPE.value,
+            "redirect_uri": GOOGLE_REDIRECT_URI.value,
         }
 
     if (
@@ -414,6 +462,7 @@ def load_oauth_providers():
             "client_secret": MICROSOFT_CLIENT_SECRET.value,
             "server_metadata_url": f"https://login.microsoftonline.com/{MICROSOFT_CLIENT_TENANT_ID.value}/v2.0/.well-known/openid-configuration",
             "scope": MICROSOFT_OAUTH_SCOPE.value,
+            "redirect_uri": MICROSOFT_REDIRECT_URI.value,
         }
 
     if (
@@ -427,6 +476,7 @@ def load_oauth_providers():
             "server_metadata_url": OPENID_PROVIDER_URL.value,
             "scope": OAUTH_SCOPES.value,
             "name": OAUTH_PROVIDER_NAME.value,
+            "redirect_uri": OPENID_REDIRECT_URI.value,
         }
 
 
@@ -438,15 +488,26 @@ load_oauth_providers()
 
 STATIC_DIR = Path(os.getenv("STATIC_DIR", BACKEND_DIR / "static")).resolve()
 
-frontend_favicon = FRONTEND_BUILD_DIR / "favicon.png"
+frontend_favicon = FRONTEND_BUILD_DIR / "static" / "favicon.png"
+
 if frontend_favicon.exists():
     try:
         shutil.copyfile(frontend_favicon, STATIC_DIR / "favicon.png")
     except Exception as e:
         logging.error(f"An error occurred: {e}")
-
 else:
     logging.warning(f"Frontend favicon not found at {frontend_favicon}")
+
+frontend_splash = FRONTEND_BUILD_DIR / "static" / "splash.png"
+
+if frontend_splash.exists():
+    try:
+        shutil.copyfile(frontend_splash, STATIC_DIR / "splash.png")
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+else:
+    logging.warning(f"Frontend splash not found at {frontend_splash}")
+
 
 ####################################
 # CUSTOM_NAME
@@ -469,6 +530,19 @@ else:
 #                 r = requests.get(url, stream=True)
 #                 if r.status_code == 200:
 #                     with open(f"{STATIC_DIR}/favicon.png", "wb") as f:
+#                         r.raw.decode_content = True
+#                         shutil.copyfileobj(r.raw, f)
+
+#             if "splash" in data:
+#                 url = (
+#                     f"https://api.openwebui.com{data['splash']}"
+#                     if data["splash"][0] == "/"
+#                     else data["splash"]
+#                 )
+
+#                 r = requests.get(url, stream=True)
+#                 if r.status_code == 200:
+#                     with open(f"{STATIC_DIR}/splash.png", "wb") as f:
 #                         r.raw.decode_content = True
 #                         shutil.copyfileobj(r.raw, f)
 
@@ -673,6 +747,12 @@ ENABLE_SIGNUP = PersistentConfig(
     ),
 )
 
+ENABLE_LOGIN_FORM = PersistentConfig(
+    "ENABLE_LOGIN_FORM",
+    "ui.ENABLE_LOGIN_FORM",
+    os.environ.get("ENABLE_LOGIN_FORM", "True").lower() == "true",
+)
+
 DEFAULT_LOCALE = PersistentConfig(
     "DEFAULT_LOCALE",
     "ui.default_locale",
@@ -680,7 +760,7 @@ DEFAULT_LOCALE = PersistentConfig(
 )
 
 DEFAULT_MODELS = PersistentConfig(
-    "DEFAULT_MODELS", "ui.default_models", os.environ.get("DEFAULT_MODELS", "llama3:8b")
+    "DEFAULT_MODELS", "ui.default_models", os.environ.get("DEFAULT_MODELS", "qwen2:7b-instruct-q4_K_M")
 )
 
 DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
@@ -720,7 +800,7 @@ DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
 DEFAULT_USER_ROLE = PersistentConfig(
     "DEFAULT_USER_ROLE",
     "ui.default_user_role",
-    os.getenv("DEFAULT_USER_ROLE", "user"),
+    os.getenv("DEFAULT_USER_ROLE", "pending"),
 )
 
 USER_PERMISSIONS_CHAT_DELETION = (
@@ -751,6 +831,10 @@ WEBHOOK_URL = PersistentConfig(
 
 ENABLE_ADMIN_EXPORT = os.environ.get("ENABLE_ADMIN_EXPORT", "True").lower() == "true"
 
+ENABLE_ADMIN_CHAT_ACCESS = (
+    os.environ.get("ENABLE_ADMIN_CHAT_ACCESS", "True").lower() == "true"
+)
+
 ENABLE_COMMUNITY_SHARING = PersistentConfig(
     "ENABLE_COMMUNITY_SHARING",
     "ui.enable_community_sharing",
@@ -767,11 +851,14 @@ class BannerModel(BaseModel):
     timestamp: int
 
 
-WEBUI_BANNERS = PersistentConfig(
-    "WEBUI_BANNERS",
-    "ui.banners",
-    [BannerModel(**banner) for banner in json.loads("[]")],
-)
+try:
+    banners = json.loads(os.environ.get("WEBUI_BANNERS", "[]"))
+    banners = [BannerModel(**banner) for banner in banners]
+except Exception as e:
+    print(f"Error loading WEBUI_BANNERS: {e}")
+    banners = []
+
+WEBUI_BANNERS = PersistentConfig("WEBUI_BANNERS", "ui.banners", banners)
 
 
 SHOW_ADMIN_DETAILS = PersistentConfig(
@@ -882,6 +969,22 @@ WEBUI_SESSION_COOKIE_SECURE = os.environ.get(
 
 if WEBUI_AUTH and WEBUI_SECRET_KEY == "":
     raise ValueError(ERROR_MESSAGES.ENV_VAR_NOT_FOUND)
+
+####################################
+# RAG document content extraction
+####################################
+
+CONTENT_EXTRACTION_ENGINE = PersistentConfig(
+    "CONTENT_EXTRACTION_ENGINE",
+    "rag.CONTENT_EXTRACTION_ENGINE",
+    os.environ.get("CONTENT_EXTRACTION_ENGINE", "").lower(),
+)
+
+TIKA_SERVER_URL = PersistentConfig(
+    "TIKA_SERVER_URL",
+    "rag.tika_server_url",
+    os.getenv("TIKA_SERVER_URL", "http://tika:9998"),  # Default for sidecar deployment
+)
 
 ####################################
 # RAG
@@ -1210,6 +1313,24 @@ COMFYUI_SD3 = PersistentConfig(
     os.environ.get("COMFYUI_SD3", "").lower() == "true",
 )
 
+COMFYUI_FLUX = PersistentConfig(
+    "COMFYUI_FLUX",
+    "image_generation.comfyui.flux",
+    os.environ.get("COMFYUI_FLUX", "").lower() == "true",
+)
+
+COMFYUI_FLUX_WEIGHT_DTYPE = PersistentConfig(
+    "COMFYUI_FLUX_WEIGHT_DTYPE",
+    "image_generation.comfyui.flux_weight_dtype",
+    os.getenv("COMFYUI_FLUX_WEIGHT_DTYPE", ""),
+)
+
+COMFYUI_FLUX_FP8_CLIP = PersistentConfig(
+    "COMFYUI_FLUX_FP8_CLIP",
+    "image_generation.comfyui.flux_fp8_clip",
+    os.environ.get("COMFYUI_FLUX_FP8_CLIP", "").lower() == "true",
+)
+
 IMAGES_OPENAI_API_BASE_URL = PersistentConfig(
     "IMAGES_OPENAI_API_BASE_URL",
     "image_generation.openai.api_base_url",
@@ -1274,6 +1395,11 @@ AUDIO_TTS_OPENAI_API_KEY = PersistentConfig(
     os.getenv("AUDIO_TTS_OPENAI_API_KEY", OPENAI_API_KEY),
 )
 
+AUDIO_TTS_API_KEY = PersistentConfig(
+    "AUDIO_TTS_API_KEY",
+    "audio.tts.api_key",
+    os.getenv("AUDIO_TTS_API_KEY", ""),
+)
 
 AUDIO_TTS_ENGINE = PersistentConfig(
     "AUDIO_TTS_ENGINE",
@@ -1300,3 +1426,7 @@ AUDIO_TTS_VOICE = PersistentConfig(
 ####################################
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/webui.db")
+
+# Replace the postgres:// with postgresql://
+if "postgres://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
