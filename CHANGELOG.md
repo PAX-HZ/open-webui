@@ -9,13 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **🔧 降低代码复杂度**: 面对Sonarqube茫茫多的"reduce its Cognitive Complexity from xx to 15 allowed"是否手足无措？通过Sage智能分析和优化建议，轻松降低代码复杂度。<https://sage.paxengine.com.cn/s/2c084fa1-8b44-4489-b897-53d3ab7c5ffc>
-- **🔍 新增预置数据库表设计Prompt**: 专门用于帮助您快速设计和优化数据库表结构。无论是简单查询还是复杂数据管理需求，都能提供专业且高效的解决方案。<https://sage.paxengine.com.cn/s/e1e39917-9795-47e0-8a9d-218b602a5105>
-- **📚 新功能：知识库标签-#产品开发管理制度** - 使用 # 符号高效、便捷提问和查找开发流程相关主题的知识内容。<https://sage.paxengine.com.cn/s/64e9bb00-3af9-4588-8c08-efcf51bd5974>
-- **📋 更新日志**: 独立的更新日志页面，这里将定期发布所有功能更新、优化和修复的详细信息。<https://sage.paxengine.com.cn/changelog>
+- **🏷️ 新增知识库标签 - #产品开发管理制度** - 输入 # 符号高效查找与开发流程相关的知识内容。<https://sage.paxengine.com.cn/s/64e9bb00-3af9-4588-8c08-efcf51bd5974>
+- **✨ 新增助手 - 降低代码复杂度**: 面对 Sonarqube 的"Reduce its Cognitive Complexity from xx to 15 allowed"提示不知所措？通过智能分析和优化建议，轻松降低代码复杂度。<https://sage.paxengine.com.cn/s/2c084fa1-8b44-4489-b897-53d3ab7c5ffc>
+- **📋 新增预置Prompt - 数据库表设计**: 专为帮助快速设计和优化数据库表结构，满足从简单查询到复杂数据管理的需求。<https://sage.paxengine.com.cn/s/e1e39917-9795-47e0-8a9d-218b602a5105>
+- **📝 更新日志**: 独立的更新日志页面，定期发布功能更新、优化和修复的详细信息。<https://sage.paxengine.com.cn/changelog>
 
 ### Fixed
-- **📤 优化错误提示**: 优化了非多模态模式下输入了图片后出现的不友好提示。
+- **📤 优化错误提示**: 改进了在非多模态模式下输入图片时出现的不友好提示。
+- **🚀 数据库优化迁移**: 增强了数据库并发连接，并优化了用户统一管理。
 
 ## [0.3.7] - 2024-08-02
 

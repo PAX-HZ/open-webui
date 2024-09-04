@@ -138,30 +138,24 @@
 
 	onMount(async () => {
 		if ($user.role === 'admin') {
-			await Promise.all([
-				(async () => {
-					OLLAMA_BASE_URLS = await getOllamaUrls(localStorage.token);
-				})(),
-				(async () => {
-					OPENAI_API_BASE_URLS = await getOpenAIUrls(localStorage.token);
-				})(),
-				(async () => {
-					OPENAI_API_KEYS = await getOpenAIKeys(localStorage.token);
-				})()
-			]);
-
-			OPENAI_API_BASE_URLS.forEach(async (url, idx) => {
-				const res = await getOpenAIModels(localStorage.token, idx);
-				if (res.pipelines) {
-					pipelineUrls[url] = true;
-				}
-			});
+			OLLAMA_BASE_URLS = await getOllamaUrls(localStorage.token);
 
 			const ollamaConfig = await getOllamaConfig(localStorage.token);
 			const openaiConfig = await getOpenAIConfig(localStorage.token);
 
 			ENABLE_OPENAI_API = openaiConfig.ENABLE_OPENAI_API;
 			ENABLE_OLLAMA_API = ollamaConfig.ENABLE_OLLAMA_API;
+
+			if (ENABLE_OPENAI_API === true) {
+				OPENAI_API_BASE_URLS = await getOpenAIUrls(localStorage.token);
+				OPENAI_API_KEYS = await getOpenAIKeys(localStorage.token);
+				OPENAI_API_BASE_URLS.forEach(async (url, idx) => {
+					const res = await getOpenAIModels(localStorage.token, idx);
+					if (res.pipelines) {
+						pipelineUrls[url] = true;
+					}
+				});
+			}
 		}
 	});
 </script>
