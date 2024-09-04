@@ -692,7 +692,7 @@ ENABLE_OPENAI_API = PersistentConfig(
     "openai.enable",
     False,
 )
-
+log.info(f"ENABLE_OPENAI_API: {ENABLE_OPENAI_API}")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_API_BASE_URL = os.environ.get("OPENAI_API_BASE_URL", "")
@@ -1425,7 +1425,8 @@ AUDIO_TTS_VOICE = PersistentConfig(
 # Database
 ####################################
 
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/webui.db")
+# DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/webui.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://root:123456@192.168.100.231:5432/webui")
 
 # Replace the postgres:// with postgresql://
 if "postgres://" in DATABASE_URL:
