@@ -203,25 +203,12 @@
 				? showItems.length
 				: showItems.filter((e) => e.type === 'warning' || e.type === 'error').length;
 
-		console.log('CullenYe:', $page.url.pathname);
 		if (len <= 0) {
 			return '';
-		} else if (len === 1) {
-			return 'mt-[32px]';
-		} else if (len === 2) {
-			return 'mt-[68px]';
-		} else if (len === 3) {
-			return 'mt-[105px]';
-		} else if (len === 4) {
-			return 'mt-[148px]';
-		} else if (len === 5) {
-			return 'mt-[182px]';
-		} else if (len === 6) {
-			return 'mt-[220px]';
-		} else if (len === 7) {
-			return 'mt-[260px]';
+		} else if (len >= 1 && len <= 7) {
+			return `mt-[${len * 36}px]`;
 		} else {
-			return 'mt-[296px]';
+			return 'mt-[288px]';
 		}
 	};
 

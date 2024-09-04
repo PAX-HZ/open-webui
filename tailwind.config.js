@@ -33,5 +33,15 @@ export default {
 			}
 		}
 	},
+	safelist: [
+		'mt-[252px]',
+		'mt-[216px]',
+		'mt-[180px]',
+		'mt-[144px]',
+		'mt-[108px]',
+		'mt-[72px]',
+		'mt-[36px]',
+		'mt-[0px]',
+	],
 	plugins: [require('@tailwindcss/typography')]
 };
