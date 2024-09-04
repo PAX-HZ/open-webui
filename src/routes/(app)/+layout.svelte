@@ -174,7 +174,9 @@
 				}
 			});
 
-			showChangelog.set(localStorage.version !== $config.version);
+			if ($page.url.pathname !== '/changelog' && localStorage.version !== $config.version) {
+				showChangelog.set(localStorage.version !== $config.version);
+			}
 
 			await tick();
 		}
