@@ -5,11 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.23] - 2024-10-08
+
+### Added
+
+- **🚀 模型升级至Qwen2.5**: 我们很高兴地宣布，我们的智能模型已经升级到了最新的Qwen2.5(14B-int4)版本，在牺牲一定性能的情况下，带来了更强大的语言理解和生成能力、更准确专业的回复，这将使您的使用体验更加满意和高效。
+- **📧 新增助手 - 项目跟踪邮件**: 我们新推出了一项名为“项目跟踪邮件”的助手，可以根据您输入的项目信息和进展情况，自动生成专业的进度跟踪邮件模板，帮助您快速撰写邮件。<https://sage.paxengine.com.cn/s/f335a280-44ba-41b0-8a6e-36bf2510bd41>
+- **🐧 新增预置Prompt - Linux命令**: 为了帮助用户更方便地获取Linux系统相关的知识和操作技巧，我们增加了“Linux命令”这一预设提示词。现在您可以直接询问与Linux操作系统有关的问题，如文件管理、网络配置等，并获得详细的解答或示例代码。<https://sage.paxengine.com.cn/s/ac9f0b4a-8d7c-42b0-9e63-68812389e61a>
+
+
 ## [0.3.12] - 2024-09-03
 
 ### Added
 
-- **🏷️ 新增知识库标签 - #产品开发管理制度** - 输入 # 符号高效查找与开发流程相关的知识内容。<https://sage.paxengine.com.cn/s/64e9bb00-3af9-4588-8c08-efcf51bd5974>
+- **🏷️ 新增知识库标签 - #产品开发管理制度**: 输入 # 符号高效查找与开发流程相关的知识内容。<https://sage.paxengine.com.cn/s/64e9bb00-3af9-4588-8c08-efcf51bd5974>
 - **✨ 新增助手 - 降低代码复杂度**: 面对 Sonarqube 的"Reduce its Cognitive Complexity from xx to 15 allowed"提示不知所措？通过智能分析和优化建议，轻松降低代码复杂度。<https://sage.paxengine.com.cn/s/2c084fa1-8b44-4489-b897-53d3ab7c5ffc>
 - **📋 新增预置Prompt - 数据库表设计**: 专为帮助快速设计和优化数据库表结构，满足从简单查询到复杂数据管理的需求。<https://sage.paxengine.com.cn/s/e1e39917-9795-47e0-8a9d-218b602a5105>
 - **📝 更新日志**: 独立的更新日志页面，定期发布功能更新、优化和修复的详细信息。<https://sage.paxengine.com.cn/changelog>
