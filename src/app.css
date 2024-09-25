@@ -45,6 +45,9 @@ math {
 iframe {
 	@apply rounded-lg;
 }
+.markdown-prose {
+	@apply prose dark:prose-invert prose-p:my-0 prose-img:my-1 prose-headings:my-1 prose-pre:my-0 prose-table:my-0 prose-blockquote:my-0 prose-ul:-my-0 prose-ol:-my-0 prose-li:-my-0 whitespace-pre-line;
+}
 
 ol > li {
 	counter-increment: list-number;
@@ -54,11 +57,16 @@ ol > li {
 	min-height: 28px;
 }
 
-.prose ol > li::before {
-	content: counters(list-number, '.') '.';
-	padding-right: 0.5rem;
-	color: var(--tw-prose-counters);
-	font-weight: 400;
+.markdown a {
+	@apply underline;
+}
+
+.font-primary {
+	font-family: 'Archivo', sans-serif;
+}
+
+iframe {
+	@apply rounded-lg;
 }
 
 li p {
@@ -166,4 +174,21 @@ input[type='number'] {
 	font-size: 0.8em;
 	font-weight: 600;
 	@apply rounded-md dark:bg-gray-800 bg-gray-100 mx-0.5;
+}
+
+.svelte-flow {
+	background-color: transparent !important;
+}
+
+.svelte-flow__edge > path {
+	stroke-width: 0.5;
+}
+
+.svelte-flow__edge.animated > path {
+	stroke-width: 2;
+	@apply stroke-gray-600 dark:stroke-gray-500;
+}
+
+.bg-gray-950-90 {
+	background-color: rgba(var(--color-gray-950, #0d0d0d), 0.9);
 }

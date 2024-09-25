@@ -14,4 +14,5 @@ Pipfile
 !data/statistic.py
 
 !data/config.json
+/open_webui/data/*
 .webui_secret_key

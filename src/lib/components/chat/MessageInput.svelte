@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { onMount, tick, getContext } from 'svelte';
+	import { onMount, tick, getContext, createEventDispatcher } from 'svelte';
+	const dispatch = createEventDispatcher();
+
 	import {
 		type Model,
 		mobile,
@@ -12,16 +14,12 @@
 		tools,
 		user as _user
 	} from '$lib/stores';
-	import { blobToFile, calculateSHA256, findWordIndices } from '$lib/utils';
+	import { blobToFile, findWordIndices } from '$lib/utils';
 
-	import {
-		processDocToVectorDB,
-		uploadDocToVectorDB,
-		uploadWebToVectorDB,
-		uploadYoutubeTranscriptionToVectorDB
-	} from '$lib/apis/rag';
-
+	import { transcribeAudio } from '$lib/apis/audio';
+	import { processDocToVectorDB } from '$lib/apis/rag';
 	import { uploadFile } from '$lib/apis/files';
+
 	import {
 		SUPPORTED_FILE_TYPE,
 		SUPPORTED_FILE_EXTENSIONS,
@@ -29,28 +27,24 @@
 		WEBUI_API_BASE_URL
 	} from '$lib/constants';
 
-	import Prompts from './MessageInput/PromptCommands.svelte';
-	import Suggestions from './MessageInput/Suggestions.svelte';
-	import AddFilesPlaceholder from '../AddFilesPlaceholder.svelte';
-	import Documents from './MessageInput/Documents.svelte';
-	import Models from './MessageInput/Models.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
-	import XMark from '$lib/components/icons/XMark.svelte';
 	import InputMenu from './MessageInput/InputMenu.svelte';
 	import Headphone from '../icons/Headphone.svelte';
 	import VoiceRecording from './MessageInput/VoiceRecording.svelte';
-	import { transcribeAudio } from '$lib/apis/audio';
 	import FileItem from '../common/FileItem.svelte';
 	import FilesOverlay from './MessageInput/FilesOverlay.svelte';
+	import Commands from './MessageInput/Commands.svelte';
+	import XMark from '../icons/XMark.svelte';
 
 	const i18n = getContext('i18n');
 
 	export let transparentBackground = false;
 
 	export let submitPrompt: Function;
+	export let createMessagePair: Function;
 	export let stopResponse: Function;
 
-	export let autoScroll = true;
+	export let autoScroll = false;
 
 	export let atSelectedModel: Model | undefined;
 	export let selectedModels: [''];
@@ -60,9 +54,7 @@
 	let chatTextAreaElement: HTMLTextAreaElement;
 	let filesInputElement;
 
-	let promptsElement;
-	let documentsElement;
-	let modelsElement;
+	let commandsElement;
 
 	let inputFiles;
 	let dragged = false;
@@ -70,14 +62,13 @@
 	let user = null;
 	let chatInputPlaceholder = '';
 
-	export let files = [];
+	export let history;
 
+	export let prompt = '';
+	export let files = [];
 	export let availableToolIds = [];
 	export let selectedToolIds = [];
 	export let webSearchEnabled = false;
-
-	export let prompt = '';
-	export let messages = [];
 
 	let visionCapableModels = [];
 	$: visionCapableModels = [...(atSelectedModel ? [atSelectedModel] : selectedModels)].filter(
@@ -93,25 +84,14 @@
 
 	const scrollToBottom = () => {
 		const element = document.getElementById('messages-container');
-		element.scrollTop = element.scrollHeight;
+		element.scrollTo({
+			top: element.scrollHeight,
+			behavior: 'smooth'
+		});
 	};
 
 	const uploadFileHandler = async (file) => {
 		console.log(file);
-
-		// Check if the file is an audio file and transcribe/convert it to text file
-		if (['audio/mpeg', 'audio/wav'].includes(file['type'])) {
-			const res = await transcribeAudio(localStorage.token, file).catch((error) => {
-				toast.error(error);
-				return null;
-			});
-
-			if (res) {
-				console.log(res);
-				const blob = new Blob([res.text], { type: 'text/plain' });
-				file = blobToFile(blob, `${file.name}.txt`);
-			}
-		}
 
 		const fileItem = {
 			type: 'file',
@@ -125,6 +105,23 @@
 			error: ''
 		};
 		files = [...files, fileItem];
+
+		// Check if the file is an audio file and transcribe/convert it to text file
+		if (['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/x-m4a'].includes(file['type'])) {
+			const res = await transcribeAudio(localStorage.token, file).catch((error) => {
+				toast.error(error);
+				return null;
+			});
+
+			if (res) {
+				console.log(res);
+				const blob = new Blob([res.text], { type: 'text/plain' });
+				file = blobToFile(blob, `${file.name}.txt`);
+
+				fileItem.name = file.name;
+				fileItem.size = file.size;
+			}
+		}
 
 		try {
 			const uploadedFile = await uploadFile(localStorage.token, file);
@@ -177,60 +174,42 @@
 		}
 	};
 
-	const uploadWeb = async (url) => {
-		console.log(url);
+	const inputFilesHandler = async (inputFiles) => {
+		inputFiles.forEach((file) => {
+			console.log(file, file.name.split('.').at(-1));
 
-		const doc = {
-			type: 'doc',
-			name: url,
-			collection_name: '',
-			status: false,
-			url: url,
-			error: ''
-		};
-
-		try {
-			files = [...files, doc];
-			const res = await uploadWebToVectorDB(localStorage.token, '', url);
-
-			if (res) {
-				doc.status = 'processed';
-				doc.collection_name = res.collection_name;
-				files = files;
+			if (
+				($config?.file?.max_size ?? null) !== null &&
+				file.size > ($config?.file?.max_size ?? 0) * 1024 * 1024
+			) {
+				toast.error(
+					$i18n.t(`File size should not exceed {{maxSize}} MB.`, {
+						maxSize: $config?.file?.max_size
+					})
+				);
+				return;
 			}
-		} catch (e) {
-			// Remove the failed doc from the files array
-			files = files.filter((f) => f.name !== url);
-			toast.error(e);
-		}
-	};
 
-	const uploadYoutubeTranscription = async (url) => {
-		console.log(url);
-
-		const doc = {
-			type: 'doc',
-			name: url,
-			collection_name: '',
-			status: false,
-			url: url,
-			error: ''
-		};
-
-		try {
-			files = [...files, doc];
-			const res = await uploadYoutubeTranscriptionToVectorDB(localStorage.token, url);
-
-			if (res) {
-				doc.status = 'processed';
-				doc.collection_name = res.collection_name;
-				files = files;
+			if (['image/gif', 'image/webp', 'image/jpeg', 'image/png'].includes(file['type'])) {
+				if (visionCapableModels.length === 0) {
+					toast.error($i18n.t('Selected model(s) do not support image inputs'));
+					return;
+				}
+				let reader = new FileReader();
+				reader.onload = (event) => {
+					files = [
+						...files,
+						{
+							type: 'image',
+							url: `${event.target.result}`
+						}
+					];
+				};
+				reader.readAsDataURL(file);
+			} else {
+				uploadFileHandler(file);
 			}
-		} catch (e) {
-			// Remove the failed doc from the files array
-			files = files.filter((f) => f.name !== url);
-			toast.error(e);
-		}
+		});
 	};
 
 	onMount(() => {
@@ -260,30 +239,9 @@
 
 			if (e.dataTransfer?.files) {
 				const inputFiles = Array.from(e.dataTransfer?.files);
-
 				if (inputFiles && inputFiles.length > 0) {
-					inputFiles.forEach((file) => {
-						console.log(file, file.name.split('.').at(-1));
-						if (['image/gif', 'image/webp', 'image/jpeg', 'image/png'].includes(file['type'])) {
-							if (visionCapableModels.length === 0) {
-								toast.error($i18n.t('Selected model(s) do not support image inputs'));
-								return;
-							}
-							let reader = new FileReader();
-							reader.onload = (event) => {
-								files = [
-									...files,
-									{
-										type: 'image',
-										url: `${event.target.result}`
-									}
-								];
-							};
-							reader.readAsDataURL(file);
-						} else {
-							uploadFileHandler(file);
-						}
-					});
+					console.log(inputFiles);
+					inputFilesHandler(inputFiles);
 				} else {
 					toast.error($i18n.t(`File not found.`));
 				}
@@ -314,7 +272,7 @@
 	<div class=" -mb-0.5 mx-auto inset-x-0 bg-transparent flex justify-center">
 		<div class="flex flex-col max-w-6xl px-2.5 md:px-6 w-full">
 			<div class="relative">
-				{#if autoScroll === false && messages.length > 0}
+				{#if autoScroll === false && history?.currentId}
 					<div
 						class=" absolute -top-12 left-0 right-0 flex justify-center z-30 pointer-events-none"
 					>
@@ -343,48 +301,9 @@
 			</div>
 
 			<div class="w-full relative">
-				{#if prompt.charAt(0) === '/'}
-					<Prompts bind:this={promptsElement} bind:prompt bind:files />
-				{:else if prompt.charAt(0) === '#'}
-					<Documents
-						bind:this={documentsElement}
-						bind:prompt
-						on:youtube={(e) => {
-							console.log(e);
-							uploadYoutubeTranscription(e.detail);
-						}}
-						on:url={(e) => {
-							console.log(e);
-							uploadWeb(e.detail);
-						}}
-						on:select={(e) => {
-							console.log(e);
-							files = [
-								...files,
-								{
-									type: e?.detail?.type ?? 'file',
-									...e.detail,
-									status: 'processed'
-								}
-							];
-						}}
-					/>
-				{/if}
-
-				<Models
-					bind:this={modelsElement}
-					bind:prompt
-					bind:chatInputPlaceholder
-					{messages}
-					on:select={(e) => {
-						atSelectedModel = e.detail;
-						chatTextAreaElement?.focus();
-					}}
-				/>
-
 				{#if atSelectedModel !== undefined}
 					<div
-						class="px-3 py-2.5 text-left w-full flex justify-between items-center absolute bottom-0 left-0 right-0 bg-gradient-to-t from-50% from-white dark:from-gray-900 z-50"
+						class="px-3 py-2.5 text-left w-full flex justify-between items-center absolute bottom-0.5 left-0 right-0 bg-gradient-to-t from-50% from-white dark:from-gray-900 z-10"
 					>
 						<div class="flex items-center gap-2 text-sm dark:text-gray-500">
 							<img
@@ -413,12 +332,27 @@
 						</div>
 					</div>
 				{/if}
+
+				<Commands
+					bind:this={commandsElement}
+					bind:prompt
+					bind:files
+					on:select={(e) => {
+						const data = e.detail;
+
+						if (data?.type === 'model') {
+							atSelectedModel = data.data;
+						}
+
+						chatTextAreaElement?.focus();
+					}}
+				/>
 			</div>
 		</div>
 	</div>
 
 	<div class="{transparentBackground ? 'bg-transparent' : 'bg-white dark:bg-gray-900'} ">
-		<div class="max-w-6xl px-2.5 md:px-6 mx-auto inset-x-0">
+		<div class="max-w-6xl px-2.5 md:px-6 mx-auto inset-x-0 pb-safe-bottom">
 			<div class=" pb-2">
 				<input
 					bind:this={filesInputElement}
@@ -429,27 +363,7 @@
 					on:change={async () => {
 						if (inputFiles && inputFiles.length > 0) {
 							const _inputFiles = Array.from(inputFiles);
-							_inputFiles.forEach((file) => {
-								if (['image/gif', 'image/webp', 'image/jpeg', 'image/png'].includes(file['type'])) {
-									if (visionCapableModels.length === 0) {
-										toast.error($i18n.t('Selected model(s) do not support image inputs'));
-										return;
-									}
-									let reader = new FileReader();
-									reader.onload = (event) => {
-										files = [
-											...files,
-											{
-												type: 'image',
-												url: `${event.target.result}`
-											}
-										];
-									};
-									reader.readAsDataURL(file);
-								} else {
-									uploadFileHandler(file);
-								}
-							});
+							inputFilesHandler(_inputFiles);
 						} else {
 							toast.error($i18n.t(`File not found.`));
 						}
@@ -593,6 +507,7 @@
 										<button
 											class="bg-gray-50 hover:bg-gray-100 text-gray-800 dark:bg-gray-850 dark:text-white dark:hover:bg-gray-800 transition rounded-full p-2 outline-none focus:outline-none"
 											type="button"
+											aria-label="More"
 										>
 											<svg
 												xmlns="http://www.w3.org/2000/svg"
@@ -638,6 +553,13 @@
 									}}
 									on:keydown={async (e) => {
 										const isCtrlPressed = e.ctrlKey || e.metaKey; // metaKey is for Cmd key on Mac
+										const commandsContainerElement = document.getElementById('commands-container');
+
+										// Command/Ctrl + Shift + Enter to submit a message pair
+										if (isCtrlPressed && e.key === 'Enter' && e.shiftKey) {
+											e.preventDefault();
+											createMessagePair(prompt);
+										}
 
 										// Check if Ctrl + R is pressed
 										if (prompt === '' && isCtrlPressed && e.key.toLowerCase() === 'r') {
@@ -668,10 +590,9 @@
 											editButton?.click();
 										}
 
-										if (['/', '#', '@'].includes(prompt.charAt(0)) && e.key === 'ArrowUp') {
+										if (commandsContainerElement && e.key === 'ArrowUp') {
 											e.preventDefault();
-
-											(promptsElement || documentsElement || modelsElement).selectUp();
+											commandsElement.selectUp();
 
 											const commandOptionButton = [
 												...document.getElementsByClassName('selected-command-option-button')
@@ -679,10 +600,9 @@
 											commandOptionButton.scrollIntoView({ block: 'center' });
 										}
 
-										if (['/', '#', '@'].includes(prompt.charAt(0)) && e.key === 'ArrowDown') {
+										if (commandsContainerElement && e.key === 'ArrowDown') {
 											e.preventDefault();
-
-											(promptsElement || documentsElement || modelsElement).selectDown();
+											commandsElement.selectDown();
 
 											const commandOptionButton = [
 												...document.getElementsByClassName('selected-command-option-button')
@@ -690,7 +610,7 @@
 											commandOptionButton.scrollIntoView({ block: 'center' });
 										}
 
-										if (['/', '#', '@'].includes(prompt.charAt(0)) && e.key === 'Enter') {
+										if (commandsContainerElement && e.key === 'Enter') {
 											e.preventDefault();
 
 											const commandOptionButton = [
@@ -706,7 +626,7 @@
 											}
 										}
 
-										if (['/', '#', '@'].includes(prompt.charAt(0)) && e.key === 'Tab') {
+										if (commandsContainerElement && e.key === 'Tab') {
 											e.preventDefault();
 
 											const commandOptionButton = [
@@ -742,16 +662,16 @@
 										}
 									}}
 									rows="1"
-									on:input={(e) => {
+									on:input={async (e) => {
 										e.target.style.height = '';
 										e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
 										user = null;
 									}}
-									on:focus={(e) => {
+									on:focus={async (e) => {
 										e.target.style.height = '';
 										e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
 									}}
-									on:paste={(e) => {
+									on:paste={async (e) => {
 										const clipboardData = e.clipboardData || window.clipboardData;
 
 										if (clipboardData && clipboardData.items) {
@@ -784,7 +704,7 @@
 								/>
 
 								<div class="self-end mb-2 flex space-x-1 mr-1">
-									{#if messages.length == 0 || messages.at(-1).done == true}
+									{#if !history?.currentId || history.messages[history.currentId]?.done == true}
 										<Tooltip content={$i18n.t('Record voice')}>
 											<button
 												id="voice-input-button"
@@ -792,7 +712,7 @@
 												type="button"
 												on:click={async () => {
 													try {
-														const res = await navigator.mediaDevices
+														let stream = await navigator.mediaDevices
 															.getUserMedia({ audio: true })
 															.catch(function (err) {
 																toast.error(
@@ -806,13 +726,17 @@
 																return null;
 															});
 
-														if (res) {
+														if (stream) {
 															recording = true;
+															const tracks = stream.getTracks();
+															tracks.forEach((track) => track.stop());
 														}
+														stream = null;
 													} catch {
 														toast.error($i18n.t('Permission denied when accessing microphone'));
 													}
 												}}
+												aria-label="Voice Input"
 											>
 												<svg
 													xmlns="http://www.w3.org/2000/svg"
@@ -832,7 +756,7 @@
 							</div>
 						</div>
 						<div class="flex items-end w-10">
-							{#if messages.length == 0 || messages.at(-1).done == true}
+							{#if !history.currentId || history.messages[history.currentId]?.done == true}
 								{#if prompt === ''}
 									<div class=" flex items-center mb-1">
 										<Tooltip content={$i18n.t('Call')}>
@@ -855,15 +779,24 @@
 													}
 													// check if user has access to getUserMedia
 													try {
-														await navigator.mediaDevices.getUserMedia({ audio: true });
+														let stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 														// If the user grants the permission, proceed to show the call overlay
 
+														if (stream) {
+															const tracks = stream.getTracks();
+															tracks.forEach((track) => track.stop());
+														}
+
+														stream = null;
+
 														showCallOverlay.set(true);
+														dispatch('call');
 													} catch (err) {
 														// If the user denies the permission or an error occurs, show an error message
 														toast.error($i18n.t('Permission denied when accessing media devices'));
 													}
 												}}
+												aria-label="Call"
 											>
 												<Headphone className="size-6" />
 											</button>
