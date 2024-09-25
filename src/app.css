@@ -57,18 +57,6 @@ ol > li {
 	min-height: 28px;
 }
 
-.markdown a {
-	@apply underline;
-}
-
-.font-primary {
-	font-family: 'Archivo', sans-serif;
-}
-
-iframe {
-	@apply rounded-lg;
-}
-
 li p {
 	display: inline;
 }

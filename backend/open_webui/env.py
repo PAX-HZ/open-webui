@@ -127,10 +127,11 @@ else:
 
 VERSION = PACKAGE_DATA["version"]
 
-
+import re
 # Function to parse each section
 def parse_section(section):
     items = []
+    url_pattern = r"https://\S+"
     for li in section.find_all("li"):
         # Extract raw HTML string
         raw_html = str(li)
@@ -143,7 +144,16 @@ def parse_section(section):
         title = parts[0].strip() if len(parts) > 1 else ""
         content = parts[1].strip() if len(parts) > 1 else text
 
-        items.append({"title": title, "content": content, "raw": raw_html})
+        # Check for URLs in content
+        url = None
+        match = re.search(url_pattern, content)
+        if match:
+            url = match.group(0)
+            # Remove the URL from the content
+            content = content.replace(url, "").strip()
+
+        # Append parsed data including URL
+        items.append({"title": title, "content": content, "url": url, "raw": raw_html})
     return items
 
 
