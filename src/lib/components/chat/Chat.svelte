@@ -77,7 +77,6 @@
 	const eventTarget = new EventTarget();
 	let controlPane;
 
-	let showControls = false;
 	let stopResponseFlag = false;
 	let autoScroll = true;
 	let processing = '';

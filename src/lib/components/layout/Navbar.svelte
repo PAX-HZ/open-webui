@@ -33,7 +33,6 @@
 	export let chat;
 	export let selectedModels;
 	export let showModelSelector = true;
-	export let showControls = false;
 
 	let showShareChatModal = false;
 	let showDownloadChatModal = false;

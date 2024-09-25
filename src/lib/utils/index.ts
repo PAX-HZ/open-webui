@@ -40,21 +40,7 @@ export const replaceTokens = (content, char, user) => {
 };
 
 export const sanitizeResponseContent = (content: string) => {
-	// replace single backslash with double backslash
-	content = content.replace(/\\/g, '\\\\');
-	content = convertLatexToSingleLine(content);
-
-	// First, temporarily replace valid <video> tags with a placeholder
-	const videoTagRegex = /<video\s+src="([^"]+)"\s+controls><\/video>/gi;
-	const placeholders: string[] = [];
-	content = content.replace(videoTagRegex, (_, src) => {
-		const placeholder = `{{VIDEO_${placeholders.length}}}`;
-		placeholders.push(`<video src="${src}" controls></video>`);
-		return placeholder;
-	});
-
-	// Now apply the sanitization to the rest of the content
-	content = content
+	return content
 		.replace(/<\|[a-z]*$/, '')
 		.replace(/<\|[a-z]+\|$/, '')
 		.replace(/<$/, '')
@@ -529,10 +515,6 @@ export const removeEmojis = (str: string) => {
 
 	// Replace emojis with an empty string
 	return str.replace(emojiRegex, '');
-};
-
-export const removeFormattings = (str) => {
-	return str.replace(/(\*)(.*?)\1/g, '').replace(/(```)(.*?)\1/gs, '');
 };
 
 export const removeFormattings = (str: string) => {

@@ -29,11 +29,6 @@
 
 	let model = null;
 
-	export let chatId;
-	export let modelId;
-
-	let model = null;
-
 	let loading = false;
 	let confirmed = false;
 	let interrupted = false;
