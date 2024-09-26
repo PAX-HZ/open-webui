@@ -4,7 +4,6 @@ updates:
     directory: '/backend'
     schedule:
       interval: weekly
-    target-branch: 'dev'
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
