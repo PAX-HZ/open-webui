@@ -676,6 +676,7 @@ DEFAULT_LOCALE = PersistentConfig(
 DEFAULT_MODELS = PersistentConfig(
     "DEFAULT_MODELS", "ui.default_models", os.environ.get("DEFAULT_MODELS", "qwen2.5:14b-instruct-q4_K_M")
 )
+log.info(f"DEFAULT_MODELS set: {DEFAULT_MODELS}")
 
 DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
     "DEFAULT_PROMPT_SUGGESTIONS",

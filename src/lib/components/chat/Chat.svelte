@@ -325,14 +325,15 @@
 		} else if ($page.url.searchParams.get('model')) {
 			selectedModels = $page.url.searchParams.get('model')?.split(',');
 		} else if ($settings?.models) {
+			console.log('settings?.models: ' + $settings?.models);
 			selectedModels = $settings?.models;
 		} else if ($config?.default_models) {
-			console.log($config?.default_models.split(',') ?? '');
+			console.log('config?.default_models',$config?.default_models.split(',') ?? '');
 			selectedModels = $config?.default_models.split(',');
-		} else if ($models.some((model) => model.id === 'qwen2:7b-instruct-q4_K_M')) {
-			selectedModels = ['qwen2:7b-instruct-q4_K_M'];
-			settings.set({ ...$settings, models: selectedModels });
-			await updateUserSettings(localStorage.token, { ui: $settings });
+		// } else if ($models.some((model) => model.id === 'qwen2:7b-instruct-q4_K_M')) {
+		// 	selectedModels = ['qwen2:7b-instruct-q4_K_M'];
+		// 	settings.set({ ...$settings, models: selectedModels });
+		// 	await updateUserSettings(localStorage.token, { ui: $settings });
 		} else {
 			selectedModels = [''];
 		}
