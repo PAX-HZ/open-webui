@@ -950,10 +950,15 @@ export interface ModelConfig {
 export interface ModelMeta {
 	description?: string;
 	capabilities?: object;
+	tags?: Array<Tags>;
 	profile_image_url?: string;
 }
 
-export interface ModelParams {}
+export interface Tags {
+	name?: string;
+}
+
+export interface ModelParams { }
 
 export type GlobalModelConfig = ModelConfig[];
 

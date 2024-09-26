@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
+	import { models } from '$lib/stores';
 	import {
 		user,
 		chats,
@@ -342,6 +343,45 @@
 				</div>
 			</button>
 		</div>
+
+		{#each $models.filter((m) => m.id && m?.info && m?.info.meta?.tags && m?.info.meta?.tags.length > 0 && m?.info.meta?.tags[0]?.name == 'assistant') as model}
+			<div class="px-1.5 flex justify-center text-gray-800 dark:text-gray-200">
+				<a
+					class="flex-grow flex space-x-1 rounded-xl px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+					href="/"
+					on:click={async () => {
+						// 选择助手
+						settings.set({ ...$settings, models: [model.id] });
+
+						// 使用new-chat-button进行选择器和页面更新
+						selectedChatId = null;
+						await goto('/');
+						const assistantButton = document.getElementById('new-chat-button');
+						setTimeout(() => {
+							assistantButton?.click();
+							if ($mobile) {
+								showSidebar.set(false);
+							}
+						}, 0);
+					}}
+				>
+					<div class="self-center mx-0.5">
+						<img
+							crossorigin="anonymous"
+							src={model?.info?.meta?.profile_image_url ?? '/static/favicon.png'}
+							class=" size-6 -translate-x-1.5 rounded-full {localStorage.theme === 'light'
+								? 'bg-white'
+								: ''}"
+							alt="logo"
+						/>
+					</div>
+
+					<div class="flex self-center">
+						<div class=" self-center font-medium text-sm font-primary">{model.name}</div>
+					</div>
+				</a>
+			</div>
+		{/each}
 
 		{#if $user?.role === 'admin'}
 			<div class="px-2.5 flex justify-center text-gray-800 dark:text-gray-200">

@@ -55,14 +55,8 @@
 	import { runWebSearch } from '$lib/apis/rag';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
 	import { queryMemory } from '$lib/apis/memories';
-	import { getAndUpdateUserLocation, getUserSettings } from '$lib/apis/users';
-	import {
-		chatCompleted,
-		generateTitle,
-		generateSearchQuery,
-		chatAction,
-		generateMoACompletion
-	} from '$lib/apis';
+	import { getAndUpdateUserLocation, getUserSettings, updateUserSettings } from '$lib/apis/users';
+	import { chatCompleted,	generateTitle, generateSearchQuery,	chatAction,	generateMoACompletion	} from '$lib/apis';
 
 	import Banner from '../common/Banner.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
@@ -335,6 +329,10 @@
 		} else if ($config?.default_models) {
 			console.log($config?.default_models.split(',') ?? '');
 			selectedModels = $config?.default_models.split(',');
+		} else if ($models.some((model) => model.id === 'qwen2:7b-instruct-q4_K_M')) {
+			selectedModels = ['qwen2:7b-instruct-q4_K_M'];
+			settings.set({ ...$settings, models: selectedModels });
+			await updateUserSettings(localStorage.token, { ui: $settings });
 		} else {
 			selectedModels = [''];
 		}
