@@ -83,7 +83,7 @@ docker run -it --gpus=all \
     -e USE_CUDA_DOCKER=true \
     --env=OLLAMA_BASE_URL=http://127.0.0.1:11444 \
     --workdir=/app/backend \
-    -p 8082:8080 \
+    -p 8084:8080 \
     --name sage-test \
-    docker-image.paxengine.com.cn/ai-dev/sage:0.3.7 \
+    docker-image.paxengine.com.cn/ai-dev/sage:0.3.28 \
     bash start.sh

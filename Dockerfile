@@ -145,6 +145,7 @@ COPY --chown=$UID:$GID ./backend/requirements.txt ./requirements.txt
 
     # If you use CUDA the whisper and embedding model will be downloaded on first 
     # 去除了use--no-cache-dir 
+    # Downloading https://download.pytorch.org/whl/cu121/torch-2.4.1%2Bcu121-cp311-cp311-linux_x86_64.whl (799.0 MB)
 RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER
 RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install packaging ninja
     # 改为从本地安装
