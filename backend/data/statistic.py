@@ -1,19 +1,29 @@
-import sqlite3
 import json
 import io
+import psycopg2
 import os
+from dotenv import load_dotenv
 import datetime
 from collections import Counter
 
 
 
-# 连接到 SQLite 数据库
-conn = sqlite3.connect(os.path.join(os.path.dirname(__file__), 'webui_20240808.db'))
+# 从 .env 文件中加载环境变量
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+
+# 从环境变量中获取数据库 URL
+database_url = os.getenv("DATABASE_URL")
+
+# 连接到 PostgreSQL 数据库
+conn = psycopg2.connect(database_url)
+print(conn)
 cursor = conn.cursor()
 
 # 执行 SQL 语句
-cursor.execute("SELECT json_extract(chat, '$.messages') FROM chat")
-
+# SQLite
+# cursor.execute("SELECT json_extract(chat, '$.messages') FROM chat")
+# PostgreSQL
+cursor.execute("SELECT (replace(chat, '\\u0000', '')::json)->>'messages' FROM chat")
 # 获取查询结果
 results = cursor.fetchall()
 

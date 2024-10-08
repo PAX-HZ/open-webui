@@ -19,6 +19,7 @@
 		'serpstack',
 		'serper',
 		'serply',
+		'searchapi',
 		'duckduckgo',
 		'tavily',
 		'jina'
@@ -180,6 +181,39 @@
 								<SensitiveInput
 									placeholder={$i18n.t('Enter Serply API Key')}
 									bind:value={webConfig.search.serply_api_key}
+								/>
+							</div>
+						{:else if webConfig.search.engine === 'searchapi'}
+							<div>
+								<div class=" self-center text-xs font-medium mb-1">
+									{$i18n.t('SearchApi API Key')}
+								</div>
+
+								<SensitiveInput
+									placeholder={$i18n.t('Enter SearchApi API Key')}
+									bind:value={webConfig.search.searchapi_api_key}
+								/>
+							</div>
+							<div class="mt-1.5">
+								<div class=" self-center text-xs font-medium mb-1">
+									{$i18n.t('SearchApi Engine')}
+								</div>
+
+								<div class="flex w-full">
+									<div class="flex-1">
+										<input
+											class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none"
+											type="text"
+											placeholder={$i18n.t('Enter SearchApi Engine')}
+											bind:value={webConfig.search.searchapi_engine}
+											autocomplete="off"
+										/>
+									</div>
+								</div>
+
+								<SensitiveInput
+									placeholder={$i18n.t('Enter Tavily API Key')}
+									bind:value={webConfig.search.tavily_api_key}
 								/>
 							</div>
 						{:else if webConfig.search.engine === 'tavily'}

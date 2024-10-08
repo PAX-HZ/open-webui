@@ -3,11 +3,13 @@
 	import { onMount, tick, getContext } from 'svelte';
 	import { openDB, deleteDB } from 'idb';
 	import fileSaver from 'file-saver';
+	import mermaid from 'mermaid';
+
 	const { saveAs } = fileSaver;
 
 	import { goto } from '$app/navigation';
 
-	import { getModels as _getModels } from '$lib/apis';
+	import { getModels as _getModels, getVersionUpdates } from '$lib/apis';
 	import { getAllChatTags } from '$lib/apis/chats';
 
 	import { getPrompts } from '$lib/apis/prompts';
@@ -30,7 +32,8 @@
 		config,
 		showCallOverlay,
 		tools,
-		functions
+		functions,
+		temporaryChatEnabled
 	} from '$lib/stores';
 
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
@@ -39,6 +42,10 @@
 	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
 	import { getFunctions } from '$lib/apis/functions';
 	import { page } from '$app/stores';
+	import { WEBUI_VERSION } from '$lib/constants';
+	import { compareVersion } from '$lib/utils';
+
+	import UpdateInfoToast from '$lib/components/layout/UpdateInfoToast.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -80,9 +87,17 @@
 			});
 
 			if (userSettings) {
-				await settings.set(userSettings.ui);
+				settings.set(userSettings.ui);
 			} else {
-				await settings.set(JSON.parse(localStorage.getItem('settings') ?? '{}'));
+				let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
+
+				try {
+					localStorageSettings = JSON.parse(localStorage.getItem('settings') ?? '{}');
+				} catch (e: unknown) {
+					console.error('Failed to parse settings from localStorage', e);
+				}
+
+				settings.set(localStorageSettings);
 			}
 
 			await Promise.all([
@@ -178,11 +193,38 @@
 				showChangelog.set(localStorage.version !== $config.version);
 			}
 
+			if ($page.url.searchParams.get('temporary-chat') === 'true') {
+				temporaryChatEnabled.set(true);
+			}
+
+			if ($user.role === 'admin') {
+				checkForVersionUpdates();
+			}
+
 			await tick();
 		}
 
 		loaded = true;
 	});
+
+	const checkForVersionUpdates = async () => {
+		const version = await getVersionUpdates(localStorage.token).catch((error) => {
+			return {
+				current: WEBUI_VERSION,
+				latest: WEBUI_VERSION
+			};
+		});
+
+		if (compareVersion(version.latest, version.current)) {
+			toast.custom(UpdateInfoToast, {
+				duration: Number.POSITIVE_INFINITY,
+				position: 'bottom-right',
+				componentProps: {
+					version
+				}
+			});
+		}
+	};
 </script>
 
 <SettingsModal bind:show={$showSettings} />

@@ -36,7 +36,7 @@ docker run -d --gpus=all \
     docker-image.paxengine.com.cn/ai-dev/sage:0.3.2 \
     bash start.sh
 
-# use gpu
+# sage-hz
 docker run -d --gpus=all \
     --volume=open-webui:/app/backend/data \
     -v /opt/nltk_data:/opt/nltk_data \
@@ -54,6 +54,22 @@ docker run -d --gpus=all \
     docker-image.paxengine.com.cn/ai-dev/sage:0.3.7 \
     bash start.sh
 
+# sage-us
+docker run -d --gpus=all \
+    --volume=open-webui-us:/app/backend/data \
+    -v /opt/nltk_data:/opt/nltk_data \
+    -e RAG_EMBEDDING_MODEL=BAAI/bge-m3 \
+    -e RAG_RERANKING_MODEL=BAAI/bge-m3 \
+    -e RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE=true -e RAG_RERANKING_MODEL_TRUST_REMOTE_CODE=true \
+    -e NLTK_DATA=/opt/nltk_data \
+    -e USE_CUDA_DOCKER=true \
+    --env=OLLAMA_BASE_URL=http://host.docker.internal:11444 \
+    --workdir=/app/backend \
+    -p 8083:8080 \
+    --add-host=host.docker.internal:host-gateway \
+    --name sage-us \
+    docker-image.paxengine.com.cn/ai-dev/sage:0.3.12 \
+    bash start.sh
 
 # test for new version
 docker run -it --gpus=all \
@@ -67,7 +83,7 @@ docker run -it --gpus=all \
     -e USE_CUDA_DOCKER=true \
     --env=OLLAMA_BASE_URL=http://127.0.0.1:11444 \
     --workdir=/app/backend \
-    -p 8082:8080 \
+    -p 8084:8080 \
     --name sage-test \
-    docker-image.paxengine.com.cn/ai-dev/sage:0.3.7 \
+    docker-image.paxengine.com.cn/ai-dev/sage:0.3.28 \
     bash start.sh

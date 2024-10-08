@@ -90,6 +90,10 @@ ENV RAG_EMBEDDING_MODEL="$USE_EMBEDDING_MODEL_DOCKER" \
 
 ## Hugging Face download cache ##
 ENV HF_HOME="/app/backend/data/cache/embedding/models"
+
+## Torch Extensions ##
+# ENV TORCH_EXTENSIONS_DIR="/.cache/torch_extensions"
+
 #### Other models ##########################################################
 
 WORKDIR /app/backend
@@ -113,7 +117,7 @@ RUN chown -R $UID:$GID /app $HOME
 RUN --mount=type=cache,mode=0777,target=/root/.cache/pip if [ "$USE_OLLAMA" = "true" ]; then \
     apt-get update && \
     # Install pandoc and netcat
-    apt-get install -y --no-install-recommends pandoc netcat-openbsd curl && \
+    apt-get install -y --no-install-recommends git build-essential pandoc netcat-openbsd curl && \
     apt-get install -y --no-install-recommends gcc python3-dev && \
     # for RAG OCR
     apt-get install -y --no-install-recommends ffmpeg libsm6 libxext6 && \
@@ -126,7 +130,7 @@ RUN --mount=type=cache,mode=0777,target=/root/.cache/pip if [ "$USE_OLLAMA" = "t
     else \
     apt-get update && \
     # Install pandoc, netcat and gcc
-    apt-get install -y --no-install-recommends pandoc gcc netcat-openbsd curl jq && \
+    apt-get install -y --no-install-recommends git build-essential pandoc gcc netcat-openbsd curl jq && \
     apt-get install -y --no-install-recommends gcc python3-dev && \
     # for RAG OCR
     apt-get install -y --no-install-recommends ffmpeg libsm6 libxext6 && \
@@ -141,6 +145,7 @@ COPY --chown=$UID:$GID ./backend/requirements.txt ./requirements.txt
 
     # If you use CUDA the whisper and embedding model will be downloaded on first 
     # 去除了use--no-cache-dir 
+    # Downloading https://download.pytorch.org/whl/cu121/torch-2.4.1%2Bcu121-cp311-cp311-linux_x86_64.whl (799.0 MB)
 RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER
 RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install packaging ninja
     # 改为从本地安装
@@ -177,5 +182,6 @@ USER $UID:$GID
 
 ARG BUILD_HASH
 ENV WEBUI_BUILD_VERSION=${BUILD_HASH}
+ENV DOCKER true
 
 CMD [ "bash", "start.sh"]
