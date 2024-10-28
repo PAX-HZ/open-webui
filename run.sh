@@ -51,7 +51,7 @@ docker run -d --gpus=all \
     --network=host \
     --name sage \
     --restart always \
-    docker-image.paxengine.com.cn/ai-dev/sage:0.3.7 \
+    docker-image.paxengine.com.cn/ai-dev/sage:0.3.28 \
     bash start.sh
 
 # sage-us

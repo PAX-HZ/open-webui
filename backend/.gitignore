@@ -12,6 +12,7 @@ Pipfile
 /data/litellm/*
 !data/litellm/config.yaml
 !data/statistic.py
+!data/user_chats_count.pgsql
 
 !data/config.json
 /open_webui/data/*
