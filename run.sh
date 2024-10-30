@@ -26,7 +26,7 @@ docker run -d --gpus=all \
     -e RAG_EMBEDDING_MODEL=BAAI/bge-m3 \
     -e RAG_RERANKING_MODEL=BAAI/bge-m3 \
     -e RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE=true -e RAG_RERANKING_MODEL_TRUST_REMOTE_CODE=true \
-    -e HTTPS_PROXY=http://192.168.100.23:1081 -e HTTP_PROXY=http://192.168.100.23:1081 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
+    -e HTTPS_PROXY=http://192.168.100.23:10870 -e HTTP_PROXY=http://192.168.100.23:10870 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
     -e USE_CUDA_DOCKER=false \
     --env=OLLAMA_BASE_URL=http://127.0.0.1:11444 \
     --workdir=/app/backend \
@@ -43,7 +43,7 @@ docker run -d --gpus=all \
     -e RAG_EMBEDDING_MODEL=BAAI/bge-m3 \
     -e RAG_RERANKING_MODEL=BAAI/bge-m3 \
     -e RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE=true -e RAG_RERANKING_MODEL_TRUST_REMOTE_CODE=true \
-    -e HTTPS_PROXY=http://192.168.100.23:1081 -e HTTP_PROXY=http://192.168.100.23:1081 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
+    -e HTTPS_PROXY=http://192.168.100.23:10870 -e HTTP_PROXY=http://192.168.100.23:10870 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
     -e NLTK_DATA=/opt/nltk_data \
     -e USE_CUDA_DOCKER=true \
     --env=OLLAMA_BASE_URL=http://127.0.0.1:11444 \
@@ -78,7 +78,7 @@ docker run -it --gpus=all \
     -e RAG_EMBEDDING_MODEL=BAAI/bge-m3 \
     -e RAG_RERANKING_MODEL=BAAI/bge-m3 \
     -e RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE=true -e RAG_RERANKING_MODEL_TRUST_REMOTE_CODE=true \
-    -e HTTPS_PROXY=http://192.168.100.23:1081 -e HTTP_PROXY=http://192.168.100.23:1081 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
+    -e HTTPS_PROXY=http://192.168.100.23:10870 -e HTTP_PROXY=http://192.168.100.23:10870 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
     -e NLTK_DATA=/opt/nltk_data \
     -e USE_CUDA_DOCKER=true \
     --env=OLLAMA_BASE_URL=http://127.0.0.1:11444 \
