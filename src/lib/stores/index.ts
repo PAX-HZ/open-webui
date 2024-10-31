@@ -19,8 +19,10 @@ export const activeUserCount: Writable<null | number> = writable(null);
 export const USAGE_POOL: Writable<null | string[]> = writable(null);
 
 export const theme = writable('system');
+
 export const chatId = writable('');
 export const chatBoxMarginTop = writable('');
+export const chatTitle = writable('');
 
 export const chats = writable([]);
 export const pinnedChats = writable([]);
@@ -28,7 +30,7 @@ export const tags = writable([]);
 
 export const models: Writable<Model[]> = writable([]);
 export const prompts: Writable<Prompt[]> = writable([]);
-export const documents: Writable<Document[]> = writable([]);
+export const knowledge: Writable<Document[]> = writable([]);
 
 export const tools = writable([]);
 export const functions = writable([]);
@@ -44,6 +46,7 @@ export const showChangelog = writable(false);
 
 export const showControls = writable(false);
 export const showOverview = writable(false);
+export const showArtifacts = writable(false);
 export const showCallOverlay = writable(false);
 
 export const temporaryChatEnabled = writable(false);
@@ -56,7 +59,7 @@ type BaseModel = {
 	id: string;
 	name: string;
 	info?: ModelConfig;
-	owned_by: 'ollama' | 'openai';
+	owned_by: 'ollama' | 'openai' | 'arena';
 };
 
 export interface OpenAIModel extends BaseModel {

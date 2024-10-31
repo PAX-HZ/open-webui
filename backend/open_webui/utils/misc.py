@@ -81,6 +81,7 @@ def add_or_update_system_message(content: str, messages: list[dict]):
     """
     Adds a new system message at the beginning of the messages list
     or updates the existing system message at the beginning.
+    model system prompt--rag prompt--user system prompt
 
     :param msg: The message to be added or appended.
     :param messages: The list of message dictionaries.
@@ -122,7 +123,7 @@ def openai_chat_completion_message_template(
 ) -> dict:
     template = openai_chat_message_template(model)
     template["object"] = "chat.completion"
-    if message:
+    if message is not None:
         template["choices"][0]["message"] = {"content": message, "role": "assistant"}
     template["choices"][0]["finish_reason"] = "stop"
     return template

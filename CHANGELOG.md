@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.00.00_20241101] - 2024-11-01
+
+### Added
+
+- **🧪 新增助手 - 测试用例生成**: 粘贴待测试的代码方法，Sage将协助生成相应的测试用例和测试方法，提升代码质量。
+- **🔄 新增预置Prompt - 代码转换**: 当需要进行编程语言转换时，例如将Java代码转换为Python，Sage能够轻松处理这一任务。
+- **📩 全新反馈入口**: 在点赞或点踩时，现可添加更多文本信息，以提供更丰富的反馈。
+- **📂 会话归档与分组**: 在左侧菜单中，轻松管理不同主题的会话。建议按照主题创建和整理会话，以更高效地使用Sage。
+- **📤 会话导出与分享**: 完成工作后，使用Sage轻松分享或下载对话内容，作为AIGC输出产品，实现高效分享使用方式。
+
+
 ## [0.3.28] - 2024-10-08
 
 ### Added

@@ -9,21 +9,24 @@ ARG USE_CUDA_VER=cu121
 # Leaderboard: https://huggingface.co/spaces/mteb/leaderboard 
 # for better performance and multilangauge support use "intfloat/multilingual-e5-large" (~2.5GB) or "intfloat/multilingual-e5-base" (~1.5GB)
 # IMPORTANT: If you change the embedding model (sentence-transformers/all-MiniLM-L6-v2) and vice versa, you aren't able to use RAG Chat with your previous documents loaded in the WebUI! You need to re-embed them.
-# ARG USE_EMBEDDING_MODEL=intfloat/multilingual-e5-large
-# ARG USE_RERANKING_MODEL=intfloat/multilingual-e5-large
 ARG USE_EMBEDDING_MODEL=BAAI/bge-m3
 ARG USE_RERANKING_MODEL=BAAI/bge-m3
+
+# Tiktoken encoding name; models to use can be found at https://huggingface.co/models?library=tiktoken
+ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"
+
 ARG BUILD_HASH=dev-build
 # Override at your own risk - non-root configurations are untested
 ARG UID=0
 ARG GID=0
 
 ######## WebUI frontend ########
-FROM --platform=$BUILDPLATFORM node:21-alpine3.19 as build
+FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
 
 # 设置代理
-ENV http_proxy=http://192.168.100.23:1081
-ENV https_proxy=http://192.168.100.23:1081
+ENV http_proxy=http://192.168.100.23:10870
+ENV https_proxy=http://192.168.100.23:10870
+ENV all_proxy=http://192.168.100.23:10870
 ENV no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.98.34
 ARG BUILD_HASH
 
@@ -38,7 +41,7 @@ ENV APP_BUILD_HASH=${BUILD_HASH}
 RUN npm run build
 
 ######## WebUI backend ########
-FROM python:3.11-slim-bookworm as base
+FROM python:3.11-slim-bookworm AS base
 
 # Use args
 ARG USE_CUDA
@@ -88,6 +91,10 @@ ENV RAG_EMBEDDING_MODEL="$USE_EMBEDDING_MODEL_DOCKER" \
     RAG_RERANKING_MODEL="$USE_RERANKING_MODEL_DOCKER" \
     SENTENCE_TRANSFORMERS_HOME="/app/backend/data/cache/embedding/models"
 
+## Tiktoken model settings ##
+ENV TIKTOKEN_ENCODING_NAME="cl100k_base" \
+    TIKTOKEN_CACHE_DIR="/app/backend/data/cache/tiktoken"
+
 ## Hugging Face download cache ##
 ENV HF_HOME="/app/backend/data/cache/embedding/models"
 
@@ -98,7 +105,7 @@ ENV HF_HOME="/app/backend/data/cache/embedding/models"
 
 WORKDIR /app/backend
 
-ENV HOME /root
+ENV HOME=/root
 # Create user and group if not root
 RUN if [ $UID -ne 0 ]; then \
     if [ $GID -ne 0 ]; then \
@@ -141,20 +148,22 @@ RUN --mount=type=cache,mode=0777,target=/root/.cache/pip if [ "$USE_OLLAMA" = "t
 # install python dependencies
 COPY --chown=$UID:$GID ./backend/requirements.txt ./requirements.txt
 
-# RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install uv
-
-    # If you use CUDA the whisper and embedding model will be downloaded on first 
-    # 去除了use--no-cache-dir 
-    # Downloading https://download.pytorch.org/whl/cu121/torch-2.4.1%2Bcu121-cp311-cp311-linux_x86_64.whl (799.0 MB)
-RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER
-RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install packaging ninja
-    # 改为从本地安装
-    # pip3 install flash-attn --no-build-isolation && \
-    # 原来是用uv安装的
-RUN --mount=type=cache,mode=0777,target=/root/.cache/pip pip3 install -r requirements.txt
-RUN python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')"
-RUN python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])";
-RUN chown -R $UID:$GID /app/backend/data/
+RUN pip3 install uv && \
+    if [ "$USE_CUDA" = "true" ]; then \
+    # If you use CUDA the whisper and embedding model will be downloaded on first use
+    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER --no-cache-dir && \
+    uv pip install --system -r requirements.txt --no-cache-dir && \
+    python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')" && \
+    python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
+    python -c "import os; import tiktoken; tiktoken.get_encoding(os.environ['TIKTOKEN_ENCODING_NAME'])"; \
+    else \
+    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir && \
+    uv pip install --system -r requirements.txt --no-cache-dir && \
+    python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')" && \
+    python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
+    python -c "import os; import tiktoken; tiktoken.get_encoding(os.environ['TIKTOKEN_ENCODING_NAME'])"; \
+    fi; \
+    chown -R $UID:$GID /app/backend/data/
 
 # 复制本地的whl文件到镜像中
 COPY packages/flash_attn-2.6.2+cu123torch2.3cxx11abiTRUE-cp311-cp311-linux_x86_64.whl /app/
@@ -182,6 +191,6 @@ USER $UID:$GID
 
 ARG BUILD_HASH
 ENV WEBUI_BUILD_VERSION=${BUILD_HASH}
-ENV DOCKER true
+ENV DOCKER=true
 
 CMD [ "bash", "start.sh"]

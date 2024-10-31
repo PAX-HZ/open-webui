@@ -57,17 +57,11 @@
 						<Tooltip content={WEBUI_BUILD_HASH}>
 							v{WEBUI_VERSION}
 						</Tooltip>
-
-						<!-- <a
-							href="https://github.com/open-webui/open-webui/releases/tag/v{version.latest}"
-							target="_blank"
-						> -->
-							{updateAvailable === null
-								? $i18n.t('Checking for updates...')
-								: updateAvailable
-									? `(v${version.latest} ${$i18n.t('available!')})`
-									: $i18n.t('(latest)')}
-						<!-- </a> -->
+						{updateAvailable === null
+							? $i18n.t('Checking for updates...')
+							: updateAvailable
+								? `(v${version.latest} ${$i18n.t('available!')})`
+								: $i18n.t('(latest)')}
 					</div>
 
 					<button
