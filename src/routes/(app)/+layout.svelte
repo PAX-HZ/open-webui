@@ -197,8 +197,10 @@
 					document.getElementById('show-shortcuts-button')?.click();
 				}
 			});
-
-			if ($user.role === 'admin') {
+			console.log($page.url.pathname);
+			console.log($settings?.version);
+			console.log($config.version);
+			if ($page.url.pathname !== '/changelog' && $settings?.version !== $config.version) {
 				showChangelog.set($settings?.version !== $config.version);
 			}
 

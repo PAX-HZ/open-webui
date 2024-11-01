@@ -55,7 +55,7 @@
 				<div class="flex flex-col text-xs text-gray-700 dark:text-gray-200">
 					<div class="flex gap-1">
 						<Tooltip content={WEBUI_BUILD_HASH}>
-							v{WEBUI_VERSION}
+							V{WEBUI_VERSION}
 						</Tooltip>
 						{updateAvailable === null
 							? $i18n.t('Checking for updates...')

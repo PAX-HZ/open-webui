@@ -43,7 +43,7 @@ docker run -d --gpus=all \
     -e RAG_EMBEDDING_MODEL=BAAI/bge-m3 \
     -e RAG_RERANKING_MODEL=BAAI/bge-m3 \
     -e RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE=true -e RAG_RERANKING_MODEL_TRUST_REMOTE_CODE=true \
-    -e HTTPS_PROXY=http://192.168.100.23:10870 -e HTTP_PROXY=http://192.168.100.23:10870 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
+    -e https_proxy=http://192.168.100.23:10870 -e http_proxy=http://192.168.100.23:10870 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.*,host.docker.internal \
     -e NLTK_DATA=/opt/nltk_data \
     -e USE_CUDA_DOCKER=true \
     --env=OLLAMA_BASE_URL=http://127.0.0.1:11444 \
@@ -51,7 +51,7 @@ docker run -d --gpus=all \
     --network=host \
     --name sage \
     --restart always \
-    docker-image.paxengine.com.cn/ai-dev/sage:0.3.28 \
+    docker-image.paxengine.com.cn/ai-release/sage:V1.00.00_20241031 \
     bash start.sh
 
 # sage-us
@@ -78,12 +78,13 @@ docker run -it --gpus=all \
     -e RAG_EMBEDDING_MODEL=BAAI/bge-m3 \
     -e RAG_RERANKING_MODEL=BAAI/bge-m3 \
     -e RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE=true -e RAG_RERANKING_MODEL_TRUST_REMOTE_CODE=true \
-    -e HTTPS_PROXY=http://192.168.100.23:10870 -e HTTP_PROXY=http://192.168.100.23:10870 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.* \
+    -e HTTPS_PROXY=http://192.168.100.23:10870 -e HTTP_PROXY=http://192.168.100.23:10870 -e no_proxy=0.0.0.0,localhost,127.0.0.1,192.168.*.*,host.docker.internal \
     -e NLTK_DATA=/opt/nltk_data \
     -e USE_CUDA_DOCKER=true \
-    --env=OLLAMA_BASE_URL=http://127.0.0.1:11444 \
+    --env=OLLAMA_BASE_URL=http://host.docker.internal:11444 \
     --workdir=/app/backend \
     -p 8084:8080 \
+    --add-host=host.docker.internal:host-gateway \
     --name sage-test \
-    docker-image.paxengine.com.cn/ai-dev/sage:0.3.28 \
+    docker-image.paxengine.com.cn/ai-dev/sage:V1.00.00_20241031 \
     bash start.sh

@@ -55,7 +55,7 @@
 			<div class="text-sm dark:text-gray-200">{$i18n.t('Release Notes')}</div>
 			<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-200 dark:bg-gray-700" />
 			<div class="text-sm dark:text-gray-200">
-				v{WEBUI_VERSION}
+				V{WEBUI_VERSION}
 			</div>
 		</div>
 	</div>
@@ -67,7 +67,7 @@
 					{#each Object.keys(changelog) as version}
 						<div class=" mb-3 pr-2">
 							<div class="font-semibold text-xl mb-1 dark:text-white">
-								v{version} - {changelog[version].date}
+								V{version} - {changelog[version].date}
 							</div>
 
 							<hr class=" dark:border-gray-800 my-2" />
