@@ -21,7 +21,7 @@ ARG UID=0
 ARG GID=0
 ARG BUILDPLATFORM=linux/amd64
 ######## WebUI frontend ########
-FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
+FROM --platform=$BUILDPLATFORM docker-image.paxengine.com.cn/docker.io/node:22-alpine3.20 AS build
 
 # 设置代理
 ENV http_proxy=http://192.168.100.23:10870
@@ -41,7 +41,7 @@ ENV APP_BUILD_HASH=${BUILD_HASH}
 RUN npm run build
 
 ######## WebUI backend ########
-FROM python:3.11-slim-bookworm AS base
+FROM docker-image.paxengine.com.cn/docker.io/python:3.11-slim-bookworm AS base
 
 # Use args
 ARG USE_CUDA
