@@ -182,6 +182,8 @@
 			console.log($page.url.pathname);
 			console.log($settings?.version);
 			console.log($config.version);
+			console.log($settings?.showChangelog);
+			console.log(($settings?.showChangelog ?? true));
 			if ($page.url.pathname !== '/changelog' && $settings?.version !== $config.version && ($settings?.showChangelog ?? true)) {
 				showChangelog.set($settings?.version !== $config.version);
 			}
