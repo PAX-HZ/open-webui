@@ -23,11 +23,10 @@
 </script>
 
 <Modal bind:show size="lg">
-	<div class="px-5 pt-4 dark:text-gray-300 text-gray-700">
+	<div class="px-5 pt-6 dark:text-gray-300 text-gray-700">
 		<div class="flex justify-between items-start">
-			<div class="text-xl font-semibold">
+			<div class="text-3xl font-semibold">
 				{$i18n.t('What’s New in')}
-				{$WEBUI_NAME}
 				<div class="absolute px-5">
 					<Confetti x={[-1, -0.25]} y={[0, 0.5]} delay={[150, 200]} />
 			</div>
@@ -51,13 +50,6 @@
 				</svg>
 			</button>
 		</div>
-		<div class="flex items-center mt-1">
-			<div class="text-sm dark:text-gray-200">{$i18n.t('Release Notes')}</div>
-			<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-200 dark:bg-gray-700" />
-			<div class="text-sm dark:text-gray-200">
-				V{WEBUI_VERSION}
-			</div>
-		</div>
 	</div>
 
 	<div class=" w-full p-4 px-5 text-gray-700 dark:text-gray-100">
@@ -65,12 +57,12 @@
 			<div class="mb-3">
 				{#if changelog}
 					{#each Object.keys(changelog) as version}
+					<hr class=" dark:border-gray-800 my-2" />
 						<div class=" mb-3 pr-2">
 							<div class="font-semibold text-xl mb-1 dark:text-white">
 								V{version} - {changelog[version].date}
 							</div>
 
-							<hr class=" dark:border-gray-800 my-2" />
 
 							{#each Object.keys(changelog[version]).filter((section) => section !== 'date') as section}
 								<div class="">
