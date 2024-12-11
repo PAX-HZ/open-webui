@@ -35,7 +35,8 @@
 		mobile,
 		showOverview,
 		chatTitle,
-		showArtifacts
+		showArtifacts,
+		tools
 	} from '$lib/stores';
 	import {
 		convertMessagesToHistory,
@@ -48,6 +49,7 @@
 
 	import { generateChatCompletion } from '$lib/apis/ollama';
 	import {
+		addTagById,
 		createNewChat,
 		deleteTagById,
 		deleteTagsById,
@@ -65,7 +67,7 @@
 	import {
 		chatCompleted,
 		generateTitle,
-		generateSearchQuery,
+		generateQueries,
 		chatAction,
 		generateMoACompletion,
 		generateTags
@@ -78,6 +80,7 @@
 	import ChatControls from './ChatControls.svelte';
 	import EventConfirmDialog from '../common/ConfirmDialog.svelte';
 	import Placeholder from './Placeholder.svelte';
+	import { getTools } from '$lib/apis/tools';
 
 	export let chatIdProp = '';
 
@@ -141,6 +144,38 @@
 		})();
 	}
 
+	$: if (selectedModels && chatIdProp !== '') {
+		saveSessionSelectedModels();
+	}
+
+	const saveSessionSelectedModels = () => {
+		if (selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === '')) {
+			return;
+		}
+		sessionStorage.selectedModels = JSON.stringify(selectedModels);
+		console.log('saveSessionSelectedModels', selectedModels, sessionStorage.selectedModels);
+	};
+
+	$: if (selectedModels) {
+		setToolIds();
+	}
+
+	const setToolIds = async () => {
+		if (!$tools) {
+			tools.set(await getTools(localStorage.token));
+		}
+
+		if (selectedModels.length !== 1) {
+			return;
+		}
+		const model = $models.find((m) => m.id === selectedModels[0]);
+		if (model) {
+			selectedToolIds = (model?.info?.meta?.toolIds ?? []).filter((id) =>
+				$tools.find((t) => t.id === id)
+			);
+		}
+	};
+
 	const showMessage = async (message) => {
 		const _chatId = JSON.parse(JSON.stringify($chatId));
 		let _messageId = JSON.parse(JSON.stringify(message.id));
@@ -182,7 +217,7 @@
 				} else {
 					message.statusHistory = [data];
 				}
-			} else if (type === 'citation') {
+			} else if (type === 'source' || type === 'citation') {
 				if (data?.type === 'code_execution') {
 					// Code execution; update existing code execution by ID, or add new one.
 					if (!message?.code_executions) {
@@ -201,11 +236,11 @@
 
 					message.code_executions = message.code_executions;
 				} else {
-					// Regular citation.
-					if (message?.citations) {
-						message.citations.push(data);
+					// Regular source.
+					if (message?.sources) {
+						message.sources.push(data);
 					} else {
-						message.citations = [data];
+						message.sources = [data];
 					}
 				}
 			} else if (type === 'message') {
@@ -300,6 +335,7 @@
 	};
 
 	onMount(async () => {
+		console.log('mounted');
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('chat-events', chatEventHandler);
 
@@ -420,6 +456,53 @@
 	//////////////////////////
 
 	const initNewChat = async () => {
+		if (sessionStorage.selectedModels) {
+			selectedModels = JSON.parse(sessionStorage.selectedModels);
+			sessionStorage.removeItem('selectedModels');
+		} else {
+			if ($page.url.searchParams.get('models')) {
+				selectedModels = $page.url.searchParams.get('models')?.split(',');
+			} else if ($page.url.searchParams.get('model')) {
+				const urlModels = $page.url.searchParams.get('model')?.split(',');
+
+				if (urlModels.length === 1) {
+					const m = $models.find((m) => m.id === urlModels[0]);
+					if (!m) {
+						const modelSelectorButton = document.getElementById('model-selector-0-button');
+						if (modelSelectorButton) {
+							modelSelectorButton.click();
+							await tick();
+
+							const modelSelectorInput = document.getElementById('model-search-input');
+							if (modelSelectorInput) {
+								modelSelectorInput.focus();
+								modelSelectorInput.value = urlModels[0];
+								modelSelectorInput.dispatchEvent(new Event('input'));
+							}
+						}
+					} else {
+						selectedModels = urlModels;
+					}
+				} else {
+					selectedModels = urlModels;
+				}
+			} else if ($settings?.models) {
+				selectedModels = $settings?.models;
+			} else if ($config?.default_models) {
+				console.log($config?.default_models.split(',') ?? '');
+				selectedModels = $config?.default_models.split(',');
+			}
+		}
+
+		selectedModels = selectedModels.filter((modelId) => $models.map((m) => m.id).includes(modelId));
+		if (selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === '')) {
+			if ($models.length > 0) {
+				selectedModels = [$models[0].id];
+			} else {
+				selectedModels = [''];
+			}
+		}
+
 		await showControls.set(false);
 		await showCallOverlay.set(false);
 		await showOverview.set(false);
@@ -429,7 +512,6 @@
 			window.history.replaceState(history.state, '', `/`);
 		}
 
-		await chatId.set('');
 		autoScroll = true;
 
 		await chatId.set('');
@@ -442,52 +524,6 @@
 
 		chatFiles = [];
 		params = {};
-
-		if ($page.url.searchParams.get('models')) {
-			selectedModels = $page.url.searchParams.get('models')?.split(',');
-		} else if ($page.url.searchParams.get('model')) {
-			const urlModels = $page.url.searchParams.get('model')?.split(',');
-
-			if (urlModels.length === 1) {
-				const m = $models.find((m) => m.id === urlModels[0]);
-				if (!m) {
-					const modelSelectorButton = document.getElementById('model-selector-0-button');
-					if (modelSelectorButton) {
-						modelSelectorButton.click();
-						await tick();
-
-						const modelSelectorInput = document.getElementById('model-search-input');
-						if (modelSelectorInput) {
-							modelSelectorInput.focus();
-							modelSelectorInput.value = urlModels[0];
-							modelSelectorInput.dispatchEvent(new Event('input'));
-						}
-					}
-				} else {
-					selectedModels = urlModels;
-				}
-			} else {
-				selectedModels = urlModels;
-			}
-		} else if ($settings?.models) {
-			console.log('settings?.models: ' + $settings?.models);
-			selectedModels = $settings?.models;
-		} else if ($config?.default_models) {
-			console.log('config?.default_models',$config?.default_models.split(',') ?? '');
-			selectedModels = $config?.default_models.split(',');
-		}
-
-		selectedModels = selectedModels.filter((modelId) => $models.map((m) => m.id).includes(modelId));
-
-		if (selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === '')) {
-			if ($models.length > 0) {
-				selectedModels = [$models[0].id];
-			} else {
-				selectedModels = [''];
-			}
-		}
-
-		console.log(selectedModels);
 
 		if ($page.url.searchParams.get('youtube')) {
 			uploadYoutubeTranscription(
@@ -640,7 +676,8 @@
 				role: m.role,
 				content: m.content,
 				info: m.info ? m.info : undefined,
-				timestamp: m.timestamp
+				timestamp: m.timestamp,
+				...(m.sources ? { sources: m.sources } : {})
 			})),
 			chat_id: chatId,
 			session_id: $socket?.id,
@@ -693,7 +730,8 @@
 				role: m.role,
 				content: m.content,
 				info: m.info ? m.info : undefined,
-				timestamp: m.timestamp
+				timestamp: m.timestamp,
+				...(m.sources ? { sources: m.sources } : {})
 			})),
 			...(event ? { event: event } : {}),
 			chat_id: chatId,
@@ -812,9 +850,12 @@
 		console.log('submitPrompt', userPrompt, $chatId);
 
 		const messages = createMessagesList(history.currentId);
-		selectedModels = selectedModels.map((modelId) =>
+		const _selectedModels = selectedModels.map((modelId) =>
 			$models.map((m) => m.id).includes(modelId) ? modelId : ''
 		);
+		if (JSON.stringify(selectedModels) !== JSON.stringify(_selectedModels)) {
+			selectedModels = _selectedModels;
+		}
 
 		if (userPrompt === '') {
 			toast.error($i18n.t('Please enter a prompt'));
@@ -860,11 +901,10 @@
 		await tick();
 
 		// Reset chat input textarea
-		const chatInputContainer = document.getElementById('chat-input-container');
+		const chatInputElement = document.getElementById('chat-input');
 
-		if (chatInputContainer) {
-			chatInputContainer.value = '';
-			chatInputContainer.style.height = '';
+		if (chatInputElement) {
+			chatInputElement.style.height = '';
 		}
 
 		const _files = JSON.parse(JSON.stringify(files));
@@ -907,6 +947,7 @@
 		const chatInput = document.getElementById('chat-input');
 		chatInput?.focus();
 
+		saveSessionSelectedModels();
 		_responses = await sendPrompt(userPrompt, userMessageId, { newChat: true });
 
 		return _responses;
@@ -1249,8 +1290,8 @@
 								console.log(line);
 								let data = JSON.parse(line);
 
-								if ('citations' in data) {
-									responseMessage.citations = data.citations;
+								if ('sources' in data) {
+									responseMessage.sources = data.sources;
 									// Only remove status if it was initially set
 									if (model?.info?.meta?.knowledge ?? false) {
 										responseMessage.statusHistory = responseMessage.statusHistory.filter(
@@ -1603,7 +1644,7 @@
 					const textStream = await createOpenAITextStream(res.body, $settings.splitLargeChunks);
 
 					for await (const update of textStream) {
-						const { value, done, citations, selectedModelId, error, usage } = update;
+						const { value, done, sources, selectedModelId, error, usage } = update;
 						if (error) {
 							await handleOpenAIError(error, null, model, responseMessage);
 							break;
@@ -1629,8 +1670,8 @@
 							continue;
 						}
 
-						if (citations) {
-							responseMessage.citations = citations;
+						if (sources) {
+							responseMessage.sources = sources;
 							// Only remove status if it was initially set
 							if (model?.info?.meta?.knowledge ?? false) {
 								responseMessage.statusHistory = responseMessage.statusHistory.filter(
@@ -1815,6 +1856,33 @@
 		console.log('stopResponse');
 	};
 
+	const submitMessage = async (parentId, prompt) => {
+		let userPrompt = prompt;
+		let userMessageId = uuidv4();
+
+		let userMessage = {
+			id: userMessageId,
+			parentId: parentId,
+			childrenIds: [],
+			role: 'user',
+			content: userPrompt,
+			models: selectedModels
+		};
+
+		if (parentId !== null) {
+			history.messages[parentId].childrenIds = [
+				...history.messages[parentId].childrenIds,
+				userMessageId
+			];
+		}
+
+		history.messages[userMessageId] = userMessage;
+		history.currentId = userMessageId;
+
+		await tick();
+		await sendPrompt(userPrompt, userMessageId);
+	};
+
 	const regenerateResponse = async (message) => {
 		console.log('regenerateResponse');
 
@@ -1845,7 +1913,9 @@
 			responseMessage.done = false;
 			await tick();
 
-			const model = $models.filter((m) => m.id === responseMessage.model).at(0);
+			const model = $models
+				.filter((m) => m.id === (responseMessage?.selectedModelId ?? responseMessage.model))
+				.at(0);
 
 			if (model) {
 				if (model?.owned_by === 'openai') {
@@ -1863,8 +1933,6 @@
 						_chatId
 					);
 			}
-		} else {
-			toast.error($i18n.t(`Model {{modelId}} not found`, { modelId }));
 		}
 	};
 
@@ -1889,7 +1957,7 @@
 			if (res && res.ok && res.body) {
 				const textStream = await createOpenAITextStream(res.body, $settings.splitLargeChunks);
 				for await (const update of textStream) {
-					const { value, done, citations, error, usage } = update;
+					const { value, done, sources, error, usage } = update;
 					if (error || done) {
 						break;
 					}
@@ -1916,20 +1984,21 @@
 	};
 
 	const generateChatTitle = async (messages) => {
+		const lastUserMessage = messages.filter((message) => message.role === 'user').at(-1);
+
 		if ($settings?.title?.auto ?? true) {
-			const lastMessage = messages.at(-1);
 			const modelId = selectedModels[0];
 
 			const title = await generateTitle(localStorage.token, modelId, messages, $chatId).catch(
 				(error) => {
 					console.error(error);
-					return 'New Chat';
+					return lastUserMessage?.content ?? 'New Chat';
 				}
 			);
 
-			return title;
+			return title ? title : (lastUserMessage?.content ?? 'New Chat');
 		} else {
-			return 'New Chat';
+			return lastUserMessage?.content ?? 'New Chat';
 		}
 	};
 
@@ -1985,6 +2054,7 @@
 		parentId: string,
 		responseMessageId: string
 	) => {
+		// TODO: move this to the backend
 		const responseMessage = history.messages[responseMessageId];
 		const userMessage = history.messages[parentId];
 		const messages = createMessagesList(history.currentId);
@@ -1999,17 +2069,17 @@
 		history.messages[responseMessageId] = responseMessage;
 
 		const prompt = userMessage.content;
-		let searchQuery = await generateSearchQuery(
+		let queries = await generateQueries(
 			localStorage.token,
 			model,
 			messages.filter((message) => message?.content?.trim()),
 			prompt
 		).catch((error) => {
 			console.log(error);
-			return prompt;
+			return [prompt];
 		});
 
-		if (!searchQuery || searchQuery == '') {
+		if (queries.length === 0) {
 			responseMessage.statusHistory.push({
 				done: true,
 				error: true,
@@ -2019,6 +2089,8 @@
 			history.messages[responseMessageId] = responseMessage;
 			return;
 		}
+
+		const searchQuery = queries[0];
 
 		responseMessage.statusHistory.push({
 			done: false,
@@ -2222,47 +2294,17 @@
 									{selectedModels}
 									{sendPrompt}
 									{showMessage}
+									{submitMessage}
 									{continueResponse}
 									{regenerateResponse}
 									{mergeResponses}
 									{chatActionHandler}
 									bottomPadding={files.length > 0}
-									on:submit={async (e) => {
-										if (e.detail) {
-											// New user message
-											let userPrompt = e.detail.prompt;
-											let userMessageId = uuidv4();
-
-											let userMessage = {
-												id: userMessageId,
-												parentId: e.detail.parentId,
-												childrenIds: [],
-												role: 'user',
-												content: userPrompt,
-												models: selectedModels
-											};
-
-											let messageParentId = e.detail.parentId;
-
-											if (messageParentId !== null) {
-												history.messages[messageParentId].childrenIds = [
-													...history.messages[messageParentId].childrenIds,
-													userMessageId
-												];
-											}
-
-											history.messages[userMessageId] = userMessage;
-											history.currentId = userMessageId;
-
-											await tick();
-											await sendPrompt(userPrompt, userMessageId);
-										}
-									}}
 								/>
 							</div>
 						</div>
 
-						<div class=" pb-[1.6rem]">
+						<div class=" pb-[1rem]">
 							<MessageInput
 								{history}
 								{selectedModels}
@@ -2272,13 +2314,6 @@
 								bind:selectedToolIds
 								bind:webSearchEnabled
 								bind:atSelectedModel
-								availableToolIds={selectedModelIds.reduce((a, e, i, arr) => {
-									const model = $models.find((m) => m.id === e);
-									if (model?.info?.meta?.toolIds ?? false) {
-										return [...new Set([...a, ...model.info.meta.toolIds])];
-									}
-									return a;
-								}, [])}
 								transparentBackground={$settings?.backgroundImageUrl ?? false}
 								{stopResponse}
 								{createMessagePair}
@@ -2294,15 +2329,19 @@
 								on:submit={async (e) => {
 									if (e.detail) {
 										await tick();
-										submitPrompt(e.detail.replaceAll('\n\n', '\n'));
+										submitPrompt(
+											($settings?.richTextInput ?? true)
+												? e.detail.replaceAll('\n\n', '\n')
+												: e.detail
+										);
 									}
 								}}
 							/>
 
 							<div
-								class="absolute bottom-1.5 text-xs text-gray-500 text-center line-clamp-1 right-0 left-0"
+								class="absolute bottom-1 text-xs text-gray-500 text-center line-clamp-1 right-0 left-0"
 							>
-								{$i18n.t('LLMs can make mistakes. Verify important information.')}
+								<!-- {$i18n.t('LLMs can make mistakes. Verify important information.')} -->
 							</div>
 						</div>
 					{:else}
@@ -2316,13 +2355,6 @@
 								bind:selectedToolIds
 								bind:webSearchEnabled
 								bind:atSelectedModel
-								availableToolIds={selectedModelIds.reduce((a, e, i, arr) => {
-									const model = $models.find((m) => m.id === e);
-									if (model?.info?.meta?.toolIds ?? false) {
-										return [...new Set([...a, ...model.info.meta.toolIds])];
-									}
-									return a;
-								}, [])}
 								transparentBackground={$settings?.backgroundImageUrl ?? false}
 								{stopResponse}
 								{createMessagePair}
@@ -2338,7 +2370,11 @@
 								on:submit={async (e) => {
 									if (e.detail) {
 										await tick();
-										submitPrompt(e.detail.replaceAll('\n\n', '\n'));
+										submitPrompt(
+											($settings?.richTextInput ?? true)
+												? e.detail.replaceAll('\n\n', '\n')
+												: e.detail
+										);
 									}
 								}}
 							/>

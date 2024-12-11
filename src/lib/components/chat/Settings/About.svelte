@@ -43,7 +43,7 @@
 </script>
 
 <div class="flex flex-col h-full justify-between space-y-3 text-sm mb-6">
-	<div class=" space-y-3">
+	<div class=" space-y-3 overflow-y-scroll max-h-[28rem] lg:max-h-full">
 		<div>
 			<div class=" mb-2.5 text-sm font-medium flex space-x-2 items-center">
 				<div>
@@ -55,7 +55,7 @@
 				<div class="flex flex-col text-xs text-gray-700 dark:text-gray-200">
 					<div class="flex gap-1">
 						<Tooltip content={WEBUI_BUILD_HASH}>
-							v{WEBUI_VERSION}
+							V{WEBUI_VERSION}
 						</Tooltip>
 						{updateAvailable === null
 							? $i18n.t('Checking for updates...')
